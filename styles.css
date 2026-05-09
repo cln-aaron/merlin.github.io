@@ -855,28 +855,15 @@ input[type="range"] {
 .action-row .secondary { padding: 8px 6px; font-size: 0.74rem; }
 
 .author-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  display: block;
   margin-top: 20px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--edge-strong);
   border-radius: 10px;
   background:
     radial-gradient(circle at 0% 50%, rgba(34, 227, 255, 0.18), transparent 60%),
     linear-gradient(180deg, rgba(20, 26, 50, 0.85), rgba(8, 10, 22, 0.92));
   box-shadow: 0 0 24px rgba(34, 227, 255, 0.15);
-}
-
-.author-avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
-  border: 2px solid var(--cyan);
-  object-fit: cover;
-  box-shadow: 0 0 16px rgba(34, 227, 255, 0.5), inset 0 0 0 2px rgba(0, 0, 0, 0.4);
-  image-rendering: -webkit-optimize-contrast;
-  flex-shrink: 0;
 }
 
 .author-text {
@@ -907,6 +894,43 @@ input[type="range"] {
   text-transform: uppercase;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.tutorial-stage {
+  border: 1px solid var(--edge-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #04050d;
+  box-shadow: 0 0 30px rgba(34, 227, 255, 0.15);
+}
+
+.tutorial-stage canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
+}
+
+.tutorial-progress {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 12px 0 6px;
+}
+
+.tutorial-progress .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(140, 220, 255, 0.18);
+  border: 1px solid rgba(140, 220, 255, 0.32);
+}
+
+.tutorial-progress .dot.done { background: rgba(92, 255, 182, 0.6); border-color: rgba(92, 255, 182, 0.7); }
+.tutorial-progress .dot.active {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(34, 227, 255, 0.6);
 }
 
 .avatar-build {
