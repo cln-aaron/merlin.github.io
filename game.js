@@ -614,6 +614,46 @@
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Tamper-evident verification code. The host can recompute the checksum
+  // from the embedded fields and confirm the run was not edited.
+  // Format: NBX-{secsB36}-{firstTry}/{cleared}-W{wrongs}-{check6}
+  // Salt is constant; the code is reproducible from the displayed stats.
+  const VERIFY_SALT = "NBX-2026-OPS";
+
+  function djb2(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i += 1) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+    return h;
+  }
+
+  function makeVerificationCode({ seconds, firstTry, cleared, total, wrongs, score }) {
+    const t = seconds.toString(36).toUpperCase().padStart(3, "0");
+    const ft = String(firstTry).padStart(2, "0");
+    const cl = String(cleared).padStart(2, "0");
+    const tl = String(total).padStart(2, "0");
+    const wr = String(wrongs).padStart(2, "0");
+    const data = `${VERIFY_SALT}|${seconds}|${firstTry}|${cleared}|${total}|${wrongs}|${score}`;
+    const h = djb2(data).toString(36).toUpperCase().padStart(6, "0").slice(-6);
+    return `NBX-${t}-${ft}/${cl}OF${tl}-W${wr}-${h}`;
+  }
+
+  function verifyCode(code, score) {
+    const m = /^NBX-([0-9A-Z]{3})-(\d{2})\/(\d{2})OF(\d{2})-W(\d{2})-([0-9A-Z]{6})$/.exec(code.trim());
+    if (!m) return { ok: false, reason: "Format invalid" };
+    const seconds = parseInt(m[1], 36);
+    const firstTry = parseInt(m[2], 10);
+    const cleared = parseInt(m[3], 10);
+    const total = parseInt(m[4], 10);
+    const wrongs = parseInt(m[5], 10);
+    const claim = m[6];
+    const expected = makeVerificationCode({ seconds, firstTry, cleared, total, wrongs, score });
+    return {
+      ok: expected.endsWith(claim),
+      seconds, firstTry, cleared, total, wrongs,
+      time: formatTime(seconds * 1000)
+    };
+  }
+
   function drawBox(context, x, y, w, h, r = 4) {
     context.beginPath();
     if (context.roundRect) context.roundRect(x, y, w, h, r);
@@ -671,6 +711,9 @@
       this.clearedNodes = 0;
       this.hints = 0;
       this.damage = 0;
+      this.firstTryClears = 0;
+      this.totalWrongAttempts = 0;
+      this.bossesCleared = 0;
       this.puzzlesSolved = new Set();
       this.cleanup = null;
       this.cameraX = 0;
@@ -680,8 +723,49 @@
       this.particles = [];
       this.loadProgress();
       this.bindControls();
-      this.showStartScreen();
+      if (!this.maybeShowVerifyScreen()) this.showStartScreen();
       requestAnimationFrame((ts) => this.loop(ts));
+    }
+
+    maybeShowVerifyScreen() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("verify");
+      if (!code) return false;
+      const score = Number(params.get("score") || 0);
+      const result = verifyCode(code, score);
+      const ok = result.ok && score > 0;
+      this.paused = true;
+      this.started = false;
+      setOverlay(`
+        <p class="screen-kicker">// HOST VERIFIER</p>
+        <h2 class="screen-title" style="${ok ? "" : "background:linear-gradient(90deg,#ff5070,#ffc94a);-webkit-background-clip:text;background-clip:text;color:transparent"}">${ok ? "VALID" : "INVALID"}</h2>
+        <p class="lead">${ok
+          ? "This proof-of-run code is consistent with the score shown."
+          : "Code or score does not match. The run may have been altered."}</p>
+        <div class="verify-box" style="margin-top:6px">
+          <div class="verify-label">// CODE</div>
+          <div class="verify-code">${escapeHtml(code)}</div>
+        </div>
+        ${result.seconds !== undefined ? `
+          <div class="result-card" style="margin-top:14px">
+            <div class="stat-tile"><span>Encoded time</span><strong>${result.time}</strong></div>
+            <div class="stat-tile"><span>First-try</span><strong>${result.firstTry}/${result.cleared}</strong></div>
+            <div class="stat-tile"><span>Wrong attempts</span><strong>${result.wrongs}</strong></div>
+            <div class="stat-tile"><span>Score claimed</span><strong>${score || "—"}</strong></div>
+          </div>` : ""}
+        <p class="puzzle-note" style="margin-top:14px">Host workflow: ask the player to read out the code AND the displayed score. Paste both into the URL as <code>?verify=CODE&amp;score=NNNN</code> on this page. If you see <strong style="color:var(--lime)">VALID</strong>, the run is consistent.</p>
+        <div class="button-row">
+          <button class="primary" id="goPlay">Play instead</button>
+        </div>
+      `);
+      document.getElementById("goPlay").addEventListener("click", () => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("verify");
+        url.searchParams.delete("score");
+        window.history.replaceState({}, "", url.toString());
+        this.showStartScreen();
+      });
+      return true;
     }
 
     bindControls() {
@@ -750,6 +834,7 @@
             <div class="button-row">
               <button class="primary" id="startGame">Boot Run</button>
               <button class="secondary" id="startFresh">Reset Save</button>
+              <button class="secondary" id="hostVerify">Host: verify code</button>
             </div>
           </div>
           <div class="mission-map" aria-hidden="true">
@@ -764,6 +849,44 @@
       `);
       document.getElementById("startGame").addEventListener("click", () => this.startRun(false));
       document.getElementById("startFresh").addEventListener("click", () => this.startRun(true));
+      document.getElementById("hostVerify").addEventListener("click", () => this.showVerifyForm());
+    }
+
+    showVerifyForm() {
+      this.paused = true;
+      this.started = false;
+      setOverlay(`
+        <p class="screen-kicker">// HOST VERIFIER</p>
+        <h2 class="level-title">Verify a player's run</h2>
+        <p class="lead">Ask the player to read out the code AND the displayed score. Paste them here.</p>
+        <div style="display:grid;gap:10px;margin-top:10px">
+          <label class="range-row" style="grid-template-columns:1fr">Code
+            <input id="verifyCodeInput" type="text" placeholder="NBX-15O-09/31OF31-W04-V7L3XH" style="min-height:46px;padding:11px 13px;border:1px solid var(--edge-strong);border-radius:6px;background:rgba(8,10,22,0.85);color:var(--ink);font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:.06em" />
+          </label>
+          <label class="range-row" style="grid-template-columns:1fr">Score (as displayed)
+            <input id="verifyScoreInput" type="number" placeholder="25000" style="min-height:46px;padding:11px 13px;border:1px solid var(--edge-strong);border-radius:6px;background:rgba(8,10,22,0.85);color:var(--ink);font-family:ui-monospace,monospace;font-size:1rem" />
+          </label>
+        </div>
+        <div id="verifyResult" style="margin-top:14px"></div>
+        <div class="button-row">
+          <button class="primary" id="verifyRun">Verify</button>
+          <button class="secondary" id="verifyBack">Back</button>
+        </div>
+      `);
+      document.getElementById("verifyBack").addEventListener("click", () => this.showStartScreen());
+      document.getElementById("verifyRun").addEventListener("click", () => {
+        const code = document.getElementById("verifyCodeInput").value.trim();
+        const score = Number(document.getElementById("verifyScoreInput").value);
+        const result = verifyCode(code, score);
+        const ok = result.ok && score > 0;
+        document.getElementById("verifyResult").innerHTML = ok
+          ? `<div class="verify-box"><div class="verify-label">RESULT</div>
+              <div class="verify-code" style="color:var(--lime)">VALID</div>
+              <div class="verify-meta">${result.time} · ${result.firstTry}/${result.cleared} first-try · ${result.wrongs} wrong · score ${score}</div></div>`
+          : `<div class="verify-box"><div class="verify-label">RESULT</div>
+              <div class="verify-code" style="color:var(--coral)">INVALID</div>
+              <div class="verify-meta">${result.reason || "Code does not match the score."}</div></div>`;
+      });
     }
 
     loadProgress() {
@@ -790,10 +913,19 @@
       this.clearedNodes = 0;
       this.damage = 0;
       this.hints = 0;
+      this.firstTryClears = 0;
+      this.totalWrongAttempts = 0;
+      this.bossesCleared = 0;
       this.startTs = performance.now();
       this.finishMs = 0;
       this.initLevel(this.levelIndex);
       this.showLevelBrief();
+    }
+
+    trackWrong(node) {
+      this.totalWrongAttempts += 1;
+      if (node) node.wrongs = (node.wrongs || 0) + 1;
+      else if (this.level) this.level.bossWrongs = (this.level.bossWrongs || 0) + 1;
     }
 
     showLevelBrief() {
@@ -859,7 +991,14 @@
 
     calculateScore() {
       const timeSeconds = Math.floor(this.elapsedMs() / 1000);
-      const raw = 140000 - timeSeconds * 60 + this.clearedNodes * 380 - this.damage * 600 - this.hints * 280;
+      const raw = 140000
+        - timeSeconds * 60
+        + this.clearedNodes * 380
+        + this.firstTryClears * 220
+        + this.bossesCleared * 1200
+        - this.damage * 600
+        - this.hints * 280
+        - this.totalWrongAttempts * 200;
       return Math.max(0, Math.round(raw));
     }
 
@@ -1054,7 +1193,12 @@
     nodeCleared(node, gain = 1) {
       node.cleared = true;
       this.clearedNodes += gain;
-      this.score += 380 * gain;
+      if (!node.wrongs) {
+        this.firstTryClears += 1;
+        this.score += 480 * gain;
+      } else {
+        this.score += 380 * gain;
+      }
       this.spawnParticles(node.x + node.w / 2, node.y + node.h / 2, 18, this.level.spec.accent);
       clearOverlay();
       this.paused = false;
@@ -1089,9 +1233,15 @@
       if (this.cleanup) { this.cleanup(); this.cleanup = null; }
       this.level.puzzleSolved = true;
       this.puzzlesSolved.add(this.level.spec.puzzle);
+      this.bossesCleared += 1;
+      if (!this.level.bossWrongs) {
+        this.firstTryClears += 1;
+        this.score += 2400;
+      } else {
+        this.score += 2000;
+      }
       this.player.checkpointX = this.level.station.x + 90;
       this.player.checkpointY = this.level.station.y - this.player.h;
-      this.score += 2000;
       clearOverlay();
       this.paused = false;
       showToast(message);
@@ -1114,20 +1264,57 @@
       const isBest = !best || this.finishMs < best;
       if (isBest) safeStorageSet(BEST_KEY, String(Math.round(this.finishMs)));
       safeStorageSet(PROGRESS_KEY, JSON.stringify({ levelIndex: 0 }));
-      const rank = this.finishMs <= 28 * 60 * 1000 ? "S — Sentinel"
-        : this.finishMs <= 36 * 60 * 1000 ? "A — Operator"
+
+      const totalChallenges = this.totalNodes + LEVEL_SPECS.length;
+      const totalCleared = this.clearedNodes + this.bossesCleared;
+      const accuracyPct = totalCleared > 0
+        ? Math.round((this.firstTryClears / totalCleared) * 100)
+        : 0;
+      const seconds = Math.round(this.finishMs / 1000);
+
+      const rank = this.finishMs <= 28 * 60 * 1000 && accuracyPct >= 90 ? "S — Sentinel"
+        : this.finishMs <= 36 * 60 * 1000 && accuracyPct >= 75 ? "A — Operator"
         : this.finishMs <= 46 * 60 * 1000 ? "B — Drafter"
         : "Apprentice";
+
+      const code = makeVerificationCode({
+        seconds,
+        firstTry: this.firstTryClears,
+        cleared: totalCleared,
+        total: totalChallenges,
+        wrongs: this.totalWrongAttempts,
+        score: finalScore
+      });
+
       setOverlay(`
         <p class="screen-kicker">// RUN COMPLETE</p>
         <h2 class="screen-title">${rank}</h2>
-        <p class="lead">All 6 worlds cleared. You handled prompts, sources, deepfakes, privacy, wellbeing, and the Trust Boss.</p>
+        <p class="lead">All 6 worlds cleared. Show the code below to your host to log this score.</p>
+
         <div class="result-card">
           <div class="stat-tile"><span>Time</span><strong>${formatTime(this.finishMs)}</strong></div>
           <div class="stat-tile"><span>Score</span><strong>${finalScore}</strong></div>
-          <div class="stat-tile"><span>Nodes cleared</span><strong>${this.clearedNodes}/${this.totalNodes}</strong></div>
-          <div class="stat-tile"><span>Best</span><strong>${isBest ? "NEW BEST" : formatTime(best)}</strong></div>
+          <div class="stat-tile"><span>First-try</span><strong>${this.firstTryClears}/${totalCleared} (${accuracyPct}%)</strong></div>
+          <div class="stat-tile"><span>Best time</span><strong>${isBest ? "NEW BEST" : formatTime(best)}</strong></div>
         </div>
+
+        <div class="result-card" style="margin-top:10px">
+          <div class="stat-tile"><span>Challenge nodes</span><strong>${this.clearedNodes}/${this.totalNodes}</strong></div>
+          <div class="stat-tile"><span>Boss worlds</span><strong>${this.bossesCleared}/${LEVEL_SPECS.length}</strong></div>
+          <div class="stat-tile"><span>Wrong attempts</span><strong>${this.totalWrongAttempts}</strong></div>
+          <div class="stat-tile"><span>Hints used</span><strong>${this.hints}</strong></div>
+        </div>
+
+        <div class="verify-box" id="verifyBox" style="margin-top:18px">
+          <div class="verify-label">// PROOF-OF-RUN — show host</div>
+          <div class="verify-code" id="verifyCode">${code}</div>
+          <div class="verify-meta">Time ${formatTime(this.finishMs)} · ${this.firstTryClears}/${totalCleared} first-try · ${this.totalWrongAttempts} wrong</div>
+          <div class="button-row" style="margin-top:10px">
+            <button class="secondary" id="copyCode">Copy code</button>
+            <button class="secondary" id="copyReceipt">Copy full receipt</button>
+          </div>
+        </div>
+
         <ul class="feature-list" style="margin-top:18px">
           <li>Prompt with goal, context, limits, format, verify.</li>
           <li>Confidence is not proof. Check the source.</li>
@@ -1141,6 +1328,41 @@
           <button class="secondary" id="titleAgain">Title</button>
         </div>
       `);
+
+      const receipt = [
+        "NEUROBLOX — proof of run",
+        `Time:       ${formatTime(this.finishMs)} (${seconds}s)`,
+        `Score:      ${finalScore}`,
+        `Rank:       ${rank}`,
+        `First-try:  ${this.firstTryClears}/${totalCleared} (${accuracyPct}%)`,
+        `Wrong:      ${this.totalWrongAttempts}`,
+        `Hints:      ${this.hints}`,
+        `Damage:     ${this.damage}`,
+        `Code:       ${code}`
+      ].join("\n");
+
+      const copy = (text, btn) => {
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            const original = btn.textContent;
+            btn.textContent = "✓ Copied";
+            setTimeout(() => btn.textContent = original, 1400);
+          }).catch(() => fallback());
+        } else fallback();
+        function fallback() {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); } catch (_) {}
+          ta.remove();
+          const original = btn.textContent;
+          btn.textContent = "✓ Copied";
+          setTimeout(() => btn.textContent = original, 1400);
+        }
+      };
+      document.getElementById("copyCode").addEventListener("click", (e) => copy(code, e.currentTarget));
+      document.getElementById("copyReceipt").addEventListener("click", (e) => copy(receipt, e.currentTarget));
       document.getElementById("playAgain").addEventListener("click", () => this.startRun(true));
       document.getElementById("titleAgain").addEventListener("click", () => this.showStartScreen());
     }
@@ -1244,7 +1466,7 @@
           } else {
             btn.classList.add("wrong");
             btn.disabled = true;
-            this.damage += 1;
+            this.trackWrong(node);
             feedback.innerHTML = `<strong style="color:var(--coral)">Nope.</strong> ${escapeHtml(node.why || "")}`;
           }
         });
@@ -1279,7 +1501,7 @@
             setTimeout(() => this.nodeCleared(node), 700);
           } else {
             feedback.innerHTML = `<strong style="color:var(--coral)">Try again.</strong> ${correct}/${total}.`;
-            this.damage += 1;
+            this.trackWrong(node);
             i = 0; correct = 0;
             setTimeout(() => renderCard(), 900);
           }
@@ -1366,7 +1588,7 @@
         } else if (!allPlaced) {
           feedback.textContent = "Place every item first.";
         } else {
-          this.damage += 1;
+          this.trackWrong(node);
           feedback.innerHTML = `<strong style="color:var(--coral)">Some are off.</strong> Re-sort and resubmit.`;
         }
       });
@@ -1423,7 +1645,7 @@
           clearInterval(timerId);
           if (this.cleanup) this.cleanup();
           this.cleanup = null;
-          this.damage += 1;
+          this.trackWrong(node);
           feedback.innerHTML = `<strong style="color:var(--coral)">Out of time.</strong> Walk back to retry.`;
           setTimeout(() => this.closeNode(node), 1200);
         }
@@ -1499,7 +1721,7 @@
           feedback.innerHTML = `<strong style="color:var(--lime)">Tags correct.</strong>`;
           setTimeout(() => this.nodeCleared(node), 700);
         } else {
-          this.damage += 1;
+          this.trackWrong(node);
           feedback.innerHTML = `<strong style="color:var(--coral)">Tag mismatch.</strong> Listen again — control clips shouldn't be tagged.`;
         }
       });
@@ -1567,7 +1789,7 @@
             feedback.innerHTML = `<strong style="color:var(--lime)">Cleared.</strong> ${correct}/${total}.`;
             setTimeout(() => this.nodeCleared(node), 700);
           } else {
-            this.damage += 1;
+            this.trackWrong(node);
             feedback.innerHTML = `<strong style="color:var(--coral)">Score too low.</strong> ${correct}/${total}. Try again.`;
             r = 0; correct = 0;
             timeLeft = node.duration || 30;
@@ -1600,7 +1822,7 @@
         timerBar.style.width = `${Math.max(0, (timeLeft / (node.duration || 30)) * 100)}%`;
         if (timeLeft <= 0) {
           clearInterval(timerId);
-          this.damage += 1;
+          this.trackWrong(node);
           feedback.innerHTML = `<strong style="color:var(--coral)">Out of time.</strong>`;
           setTimeout(() => this.closeNode(node), 800);
         }
@@ -1679,7 +1901,7 @@
       document.getElementById("forgeSubmit").addEventListener("click", () => {
         const ok = slots.every((s) => { const c = chips.find((x) => x.id === placed[s.id]); return c && c.type === s.id; });
         if (ok) this.solvePuzzle("Prompt forged. Portal trusts your input.");
-        else document.getElementById("forgeFeedback").textContent = "Some blocks are off — decoys remove safety or verification.";
+        else { this.trackWrong(); document.getElementById("forgeFeedback").textContent = "Some blocks are off — decoys remove safety or verification."; }
       });
       document.getElementById("forgeHint").addEventListener("click", () => {
         this.hints += 1;
@@ -1736,7 +1958,7 @@
       document.getElementById("sourceSubmit").addEventListener("click", () => {
         const ok = sources.every((s) => assignments[s.id] === s.zone);
         if (ok) this.solvePuzzle("Bridge repaired. Your claims have receipts.");
-        else document.getElementById("sourceFeedback").textContent = "Re-sort: official + author = use; AI/sponsored = caution; anon screenshots = reject.";
+        else { this.trackWrong(); document.getElementById("sourceFeedback").textContent = "Re-sort: official + author = use; AI/sponsored = caution; anon screenshots = reject."; }
       });
       document.getElementById("sourceHint").addEventListener("click", () => {
         this.hints += 1;
@@ -1829,7 +2051,7 @@
       document.getElementById("deepfakeSubmit").addEventListener("click", () => {
         const audioOk = audioMarks.clipA && !audioMarks.clipB && audioMarks.clipC;
         if (found.size >= 3 && audioOk) this.solvePuzzle("Forensics cleared. Multi-clue evidence > one weird frame.");
-        else document.getElementById("audioFeedback").textContent = `Need 3 video tells AND correct audio. A & C are fake; B is the control. Found ${found.size}/3.`;
+        else { this.trackWrong(); document.getElementById("audioFeedback").textContent = `Need 3 video tells AND correct audio. A & C are fake; B is the control. Found ${found.size}/3.`; }
       });
       document.getElementById("deepfakeHint").addEventListener("click", () => {
         this.hints += 1;
@@ -1881,7 +2103,7 @@
         const missed = tokens.some((tk, i) => tk[1] && !selected.has(i));
         const fp = tokens.filter((tk, i) => !tk[1] && selected.has(i)).length;
         if (!missed && fp <= 2) this.solvePuzzle("Vault locked. Task kept, identity stripped.");
-        else document.getElementById("privacyFeedback").textContent = "Still leaking, or stripped too much task. Keep purpose, redact identity.";
+        else { this.trackWrong(); document.getElementById("privacyFeedback").textContent = "Still leaking, or stripped too much task. Keep purpose, redact identity."; }
       });
       document.getElementById("privacyHint").addEventListener("click", () => {
         this.hints += 1;
@@ -1959,7 +2181,7 @@
       document.getElementById("wellbeingSubmit").addEventListener("click", () => {
         const habitsCorrect = habits.every((h) => h.good === chosen.has(h.id));
         if (hits >= 5 && habitsCorrect) this.solvePuzzle("Gate open. AI helps. People help more.");
-        else feedback.textContent = "Need 5 calm taps + only keep-habits selected.";
+        else { this.trackWrong(); feedback.textContent = "Need 5 calm taps + only keep-habits selected."; }
       });
       document.getElementById("wellbeingHint").addEventListener("click", () => {
         this.hints += 1;
@@ -2059,7 +2281,7 @@
         const sourcesOk = claims.every((c) => assigned[c.id] === c.source);
         const shieldsOk = Array.from(overlayContent.querySelectorAll("[data-shield]")).every((b) => (b.dataset.good === "true") === shieldChosen.has(b.dataset.shield));
         if (balanced && sourcesOk && shieldsOk) this.solvePuzzle("Boss broken. Your workflow is fast, fair, verified, private, humane.");
-        else document.getElementById("bossFeedback").textContent = "Boss still up: balance 25-40 each, link claims correctly, only choose responsible shields.";
+        else { this.trackWrong(); document.getElementById("bossFeedback").textContent = "Boss still up: balance 25-40 each, link claims correctly, only choose responsible shields."; }
       });
       document.getElementById("bossHint").addEventListener("click", () => {
         this.hints += 1;
@@ -2134,6 +2356,7 @@
       exit: { x: worldW - 210, y: 558, w: 74, h: 92 },
       platforms, nodes, hazards, bots,
       puzzleSolved: false,
+      bossWrongs: 0,
       prompt: ""
     };
   }
