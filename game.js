@@ -597,6 +597,54 @@
 
   const BEST_KEY = "neurobloxBestTime";
   const PROGRESS_KEY = "neurobloxProgress";
+  const AVATAR_KEY = "doomloopAvatar";
+
+  // Cute, wholesome customisation. Visor color comes from the current level's accent.
+  const AVATAR_OPTIONS = {
+    body: [
+      { id: "cyan",    name: "Cyan",    color: "#22e3ff" },
+      { id: "lime",    name: "Lime",    color: "#b6ff5c" },
+      { id: "mint",    name: "Mint",    color: "#5cffb6" },
+      { id: "magenta", name: "Magenta", color: "#ff4dd2" },
+      { id: "rose",    name: "Rose",    color: "#ffaad4" },
+      { id: "amber",   name: "Amber",   color: "#ffc94a" },
+      { id: "peach",   name: "Peach",   color: "#ffb88c" },
+      { id: "violet",  name: "Violet",  color: "#a98bff" },
+      { id: "sky",     name: "Sky",     color: "#8ec8ff" }
+    ],
+    head: [
+      { id: "square", name: "Square" },
+      { id: "round",  name: "Round" },
+      { id: "dome",   name: "Dome" }
+    ],
+    hat: [
+      { id: "none",    name: "None" },
+      { id: "beanie",  name: "Beanie" },
+      { id: "antenna", name: "Antenna" },
+      { id: "halo",    name: "Halo" },
+      { id: "bow",     name: "Bow" },
+      { id: "cap",     name: "Cap" }
+    ],
+    face: [
+      { id: "band",    name: "Visor" },
+      { id: "goggles", name: "Goggles" },
+      { id: "bigeyes", name: "Big eyes" },
+      { id: "smile",   name: "Smile" }
+    ]
+  };
+  const DEFAULT_AVATAR = { body: "cyan", head: "square", hat: "none", face: "band" };
+
+  function loadAvatar() {
+    const raw = safeStorageGet(AVATAR_KEY);
+    if (!raw) return { ...DEFAULT_AVATAR };
+    try {
+      const data = JSON.parse(raw) || {};
+      const pick = (group, val) => AVATAR_OPTIONS[group].find((o) => o.id === val) ? val : DEFAULT_AVATAR[group];
+      return { body: pick("body", data.body), head: pick("head", data.head), hat: pick("hat", data.hat), face: pick("face", data.face) };
+    } catch (_) { return { ...DEFAULT_AVATAR }; }
+  }
+  function saveAvatar(avatar) { safeStorageSet(AVATAR_KEY, JSON.stringify(avatar)); }
+  function avatarBodyColor(avatar) { return AVATAR_OPTIONS.body.find((o) => o.id === avatar.body).color; }
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function rectsOverlap(a, b) {
@@ -618,7 +666,7 @@
   // from the embedded fields and confirm the run was not edited.
   // Format: NBX-{secsB36}-{firstTry}/{cleared}-W{wrongs}-{check6}
   // Salt is constant; the code is reproducible from the displayed stats.
-  const VERIFY_SALT = "NBX-2026-OPS";
+  const VERIFY_SALT = "MRL-2026-OPS";
 
   function djb2(str) {
     let h = 5381;
@@ -634,11 +682,11 @@
     const wr = String(wrongs).padStart(2, "0");
     const data = `${VERIFY_SALT}|${seconds}|${firstTry}|${cleared}|${total}|${wrongs}|${score}`;
     const h = djb2(data).toString(36).toUpperCase().padStart(6, "0").slice(-6);
-    return `NBX-${t}-${ft}/${cl}OF${tl}-W${wr}-${h}`;
+    return `MRL-${t}-${ft}/${cl}OF${tl}-W${wr}-${h}`;
   }
 
   function verifyCode(code, score) {
-    const m = /^NBX-([0-9A-Z]{3})-(\d{2})\/(\d{2})OF(\d{2})-W(\d{2})-([0-9A-Z]{6})$/.exec(code.trim());
+    const m = /^MRL-([0-9A-Z]{3})-(\d{2})\/(\d{2})OF(\d{2})-W(\d{2})-([0-9A-Z]{6})$/.exec(code.trim());
     if (!m) return { ok: false, reason: "Format invalid" };
     const seconds = parseInt(m[1], 36);
     const firstTry = parseInt(m[2], 10);
@@ -721,6 +769,7 @@
       this.player = null;
       this.audioContext = null;
       this.particles = [];
+      this.avatar = loadAvatar();
       this.loadProgress();
       this.bindControls();
       if (!this.maybeShowVerifyScreen()) this.showStartScreen();
@@ -755,7 +804,7 @@
           </div>` : ""}
         <p class="puzzle-note" style="margin-top:14px">Host workflow: ask the player to read out the code AND the displayed score. Paste both into the URL as <code>?verify=CODE&amp;score=NNNN</code> on this page. If you see <strong style="color:var(--lime)">VALID</strong>, the run is consistent.</p>
         <div class="button-row">
-          <button class="primary" id="goPlay">Play instead</button>
+          <button class="primary" id="goPlay">▶ Play the game</button>
         </div>
       `);
       document.getElementById("goPlay").addEventListener("click", () => {
@@ -819,26 +868,35 @@
       const bestLine = bestRaw
         ? `<li>Best run: <strong style="color:var(--lime)">${formatTime(Number(bestRaw))}</strong></li>`
         : `<li>Best run: <strong style="color:var(--muted)">unset</strong></li>`;
+      const hasSave = this.levelIndex > 0;
+      const continueLabel = hasSave ? `Continue (World ${this.levelIndex + 1})` : "Start game";
       setOverlay(`
         <div class="screen-grid">
           <div>
-            <p class="screen-kicker">// 30-MIN BROWSER RUN</p>
-            <h1 class="screen-title">DOOMLOOP</h1>
+            <h1 class="screen-title">MERLIN</h1>
             <ul class="feature-list">
-              <li>Run right. Walk into glowing ▲ nodes to trigger challenges.</li>
-              <li>Press E (or tap !) at the boss tower in each world.</li>
-              <li>Portal opens once every node + the boss is cleared.</li>
-              <li><strong>Keyboard:</strong> arrows / WASD · Space = jump · E or Enter = interact · Esc = pause.</li>
-              <li><strong>Mobile:</strong> use the on-screen dpad, jump (↑), and interact (!).</li>
-              <li>Scored on time. Bonus for first-try clears. Penalty for wrong attempts and hints.</li>
+              <li><strong>How to win:</strong> in each world, walk into the glowing ▲ nodes to trigger mini-challenges. Then press <kbd>E</kbd> (or tap <kbd>!</kbd>) at the boss tower. The portal opens once both are cleared.</li>
+              <li><strong>Keyboard:</strong> arrows or WASD = move · Space = jump · E or Enter = interact · Esc = pause.</li>
+              <li><strong>Mobile:</strong> use the on-screen ‹ › arrows, ↑ to jump, ! to interact.</li>
+              <li><strong>Scored on time.</strong> Bonus for first-try clears. Penalty for wrong attempts and hints.</li>
               ${bestLine}
             </ul>
             <div class="button-row">
-              <button class="primary" id="startGame">Boot Run</button>
-              <button class="secondary" id="startFresh">Reset Save</button>
-              <button class="secondary" id="hostVerify">Host: verify code</button>
+              <button class="primary" id="startGame">▶ ${continueLabel}</button>
+              <button class="secondary" id="startFresh">↺ New game (clear save)</button>
             </div>
-            <p style="margin-top:18px;color:var(--muted);font-size:0.78rem;letter-spacing:.14em;text-transform:uppercase">© Aaron Ang</p>
+            <div class="button-row" style="margin-top:6px">
+              <button class="secondary" id="customizeAvatar">★ Customise avatar</button>
+              <button class="secondary" id="hostVerify">⚑ Host: verify a run code</button>
+            </div>
+            <div class="author-card">
+              <img class="author-avatar" src="assets/aaron.png" alt="Aaron Ang" />
+              <div class="author-text">
+                <span class="author-label">Designed, conceptualised &amp; built by</span>
+                <strong>Aaron Ang</strong>
+                <span class="author-sub">© ${new Date().getFullYear()} · all rights reserved</span>
+              </div>
+            </div>
           </div>
           <div class="mission-map" aria-hidden="true">
             <div class="map-avatar"></div>
@@ -853,6 +911,118 @@
       document.getElementById("startGame").addEventListener("click", () => this.startRun(false));
       document.getElementById("startFresh").addEventListener("click", () => this.startRun(true));
       document.getElementById("hostVerify").addEventListener("click", () => this.showVerifyForm());
+      document.getElementById("customizeAvatar").addEventListener("click", () => this.showAvatarCustomizer());
+    }
+
+    showAvatarCustomizer() {
+      this.paused = true;
+      this.started = false;
+      const draft = { ...this.avatar };
+      setOverlay(`
+        <p class="screen-kicker">// CUSTOMISE AVATAR</p>
+        <h2 class="level-title">Make it yours</h2>
+        <p class="lead">Pick a body colour, head shape, hat, and face. Visor glow matches the world you're in.</p>
+
+        <div class="avatar-build">
+          <div class="avatar-preview-box">
+            <canvas id="avatarPreview" width="220" height="240" aria-label="Avatar preview"></canvas>
+            <div class="preview-caption">Live preview</div>
+          </div>
+          <div class="avatar-pickers" id="avatarPickers"></div>
+        </div>
+
+        <div class="button-row">
+          <button class="primary" id="avatarSave">✓ Save avatar</button>
+          <button class="secondary" id="avatarReset">Reset to default</button>
+          <button class="secondary" id="avatarBack">← Back to title</button>
+        </div>
+      `);
+
+      const previewCanvas = document.getElementById("avatarPreview");
+      const previewCtx = previewCanvas.getContext("2d");
+      const pickers = document.getElementById("avatarPickers");
+
+      const renderPickers = () => {
+        const groupHTML = (key, label) => {
+          const opts = AVATAR_OPTIONS[key];
+          return `
+            <div class="picker-group">
+              <div class="picker-label">${label}</div>
+              <div class="picker-row" data-group="${key}">
+                ${opts.map((opt) => {
+                  const sel = draft[key] === opt.id ? " selected" : "";
+                  if (key === "body") {
+                    return `<button class="swatch${sel}" data-id="${opt.id}" style="background:${opt.color}" title="${escapeHtml(opt.name)}" aria-label="${escapeHtml(opt.name)}"></button>`;
+                  }
+                  return `<button class="picker-chip${sel}" data-id="${opt.id}">${escapeHtml(opt.name)}</button>`;
+                }).join("")}
+              </div>
+            </div>
+          `;
+        };
+        pickers.innerHTML = `
+          ${groupHTML("body", "Body colour")}
+          ${groupHTML("head", "Head shape")}
+          ${groupHTML("face", "Face")}
+          ${groupHTML("hat", "Hat / accessory")}
+        `;
+        pickers.querySelectorAll(".picker-row").forEach((row) => {
+          row.querySelectorAll("[data-id]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              draft[row.dataset.group] = btn.dataset.id;
+              renderPickers();
+              renderPreview();
+            });
+          });
+        });
+      };
+
+      let raf = 0;
+      const renderPreview = () => {
+        previewCtx.clearRect(0, 0, 220, 240);
+        // Soft preview backdrop
+        const grad = previewCtx.createRadialGradient(110, 110, 20, 110, 110, 130);
+        grad.addColorStop(0, "rgba(34, 227, 255, 0.16)");
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        previewCtx.fillStyle = grad;
+        previewCtx.fillRect(0, 0, 220, 240);
+        // Floor pad
+        previewCtx.fillStyle = "rgba(34,227,255,0.12)";
+        previewCtx.beginPath();
+        previewCtx.ellipse(110, 210, 60, 8, 0, 0, Math.PI * 2);
+        previewCtx.fill();
+        // Avatar centered, feet at y=205
+        previewCtx.save();
+        previewCtx.translate(110, 0);
+        const t = performance.now() / 1000;
+        const bob = Math.sin(t * 2) * 1.5;
+        previewCtx.translate(0, bob);
+        drawAvatar(previewCtx, "#22e3ff", draft, 205, t);
+        previewCtx.restore();
+      };
+      const loop = () => { renderPreview(); raf = requestAnimationFrame(loop); };
+      this.cleanup = () => cancelAnimationFrame(raf);
+
+      renderPickers();
+      loop();
+
+      document.getElementById("avatarSave").addEventListener("click", () => {
+        this.avatar = { ...draft };
+        saveAvatar(this.avatar);
+        showToast("Avatar saved.");
+        if (this.cleanup) this.cleanup();
+        this.cleanup = null;
+        this.showStartScreen();
+      });
+      document.getElementById("avatarReset").addEventListener("click", () => {
+        Object.assign(draft, DEFAULT_AVATAR);
+        renderPickers();
+      });
+      document.getElementById("avatarBack").addEventListener("click", () => {
+        if (this.cleanup) this.cleanup();
+        this.cleanup = null;
+        this.showStartScreen();
+      });
     }
 
     showVerifyForm() {
@@ -864,7 +1034,7 @@
         <p class="lead">Ask the player to read out the code AND the displayed score. Paste them here.</p>
         <div style="display:grid;gap:10px;margin-top:10px">
           <label class="range-row" style="grid-template-columns:1fr">Code
-            <input id="verifyCodeInput" type="text" placeholder="NBX-15O-09/31OF31-W04-V7L3XH" style="min-height:46px;padding:11px 13px;border:1px solid var(--edge-strong);border-radius:6px;background:rgba(8,10,22,0.85);color:var(--ink);font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:.06em" />
+            <input id="verifyCodeInput" type="text" placeholder="MRL-15O-09/31OF31-W04-V7L3XH" style="min-height:46px;padding:11px 13px;border:1px solid var(--edge-strong);border-radius:6px;background:rgba(8,10,22,0.85);color:var(--ink);font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:.06em" />
           </label>
           <label class="range-row" style="grid-template-columns:1fr">Score (as displayed)
             <input id="verifyScoreInput" type="number" placeholder="25000" style="min-height:46px;padding:11px 13px;border:1px solid var(--edge-strong);border-radius:6px;background:rgba(8,10,22,0.85);color:var(--ink);font-family:ui-monospace,monospace;font-size:1rem" />
@@ -873,7 +1043,7 @@
         <div id="verifyResult" style="margin-top:14px"></div>
         <div class="button-row">
           <button class="primary" id="verifyRun">Verify</button>
-          <button class="secondary" id="verifyBack">Back</button>
+          <button class="secondary" id="verifyBack">← Back to title</button>
         </div>
       `);
       document.getElementById("verifyBack").addEventListener("click", () => this.showStartScreen());
@@ -946,8 +1116,8 @@
             <div class="stat-tile"><span>End boss</span><strong>${PUZZLE_TITLES[spec.puzzle]}</strong></div>
           </div>
           <div class="button-row">
-            <button class="primary" id="enterLevel">Drop in</button>
-            <button class="secondary" id="backToTitle">Title</button>
+            <button class="primary" id="enterLevel">▶ Start this world</button>
+            <button class="secondary" id="backToTitle">← Back to title</button>
           </div>
         </div>
       `);
@@ -1216,7 +1386,7 @@
             <h2>${PUZZLE_TITLES[type]} — cleared</h2>
             <p>You already broke this boss. Get to the portal.</p>
           </div>
-          <div class="button-row"><button class="primary" id="closeSolved">Back</button></div>
+          <div class="button-row"><button class="primary" id="closeSolved">▶ Continue playing</button></div>
         `);
         document.getElementById("closeSolved").addEventListener("click", () => { clearOverlay(); this.paused = false; });
         return;
@@ -1333,13 +1503,13 @@
           <li>Label AI media. Test for who's missing.</li>
         </ul>
         <div class="button-row">
-          <button class="primary" id="playAgain">Run again</button>
-          <button class="secondary" id="titleAgain">Title</button>
+          <button class="primary" id="playAgain">▶ Play again from start</button>
+          <button class="secondary" id="titleAgain">← Back to title</button>
         </div>
       `);
 
       const receipt = [
-        "DOOMLOOP — proof of run",
+        "MERLIN — proof of run",
         `Time:       ${formatTime(this.finishMs)} (${seconds}s)`,
         `Score:      ${finalScore}`,
         `Rank:       ${rank}`,
@@ -1386,9 +1556,9 @@
         <h2 class="level-title">${this.level.spec.name}</h2>
         <p class="lead">${this.level.spec.goal}</p>
         <div class="button-row">
-          <button class="primary" id="resumeGame">Resume</button>
-          <button class="secondary" id="restartLevel">Restart World</button>
-          <button class="danger" id="quitTitle">Quit</button>
+          <button class="primary" id="resumeGame">▶ Resume playing</button>
+          <button class="secondary" id="restartLevel">↺ Restart this world</button>
+          <button class="danger" id="quitTitle">✕ Quit to title (lose progress)</button>
         </div>
       `);
       document.getElementById("resumeGame").addEventListener("click", () => { clearOverlay(); this.paused = false; });
@@ -1422,7 +1592,7 @@
       drawHazards(level);
       drawBots(level);
       drawParticles(this.particles);
-      drawPlayer(this.player, performance.now() / 1000, spec.accent);
+      drawPlayer(this.player, performance.now() / 1000, spec.accent, this.avatar);
       ctx.restore();
 
       drawHudOverlay(level, this);
@@ -1454,7 +1624,7 @@
         <div class="options-grid" id="mcqOptions"></div>
         <p class="puzzle-note" id="mcqFeedback" style="margin-top:14px">Take a breath. There's exactly one good answer.</p>
         <div class="button-row">
-          <button class="secondary" id="mcqClose">Skip back</button>
+          <button class="secondary" id="mcqClose">⏸ Skip for now (try again later)</button>
         </div>
       `);
       const grid = document.getElementById("mcqOptions");
@@ -1498,7 +1668,7 @@
           <button class="secondary" id="swipeRight">${escapeHtml(node.buckets[1].label)} →</button>
         </div>
         <p class="puzzle-note" id="swipeFeedback" style="margin-top:12px">Card 1 of ${total}.</p>
-        <div class="button-row"><button class="secondary" id="swipeClose">Back</button></div>
+        <div class="button-row"><button class="secondary" id="swipeClose">⏸ Skip for now</button></div>
       `);
       document.getElementById("swipeClose").addEventListener("click", () => this.closeNode(node));
       const stack = document.getElementById("swipeStack");
@@ -1548,7 +1718,7 @@
         </div>
         <div class="button-row">
           <button class="primary" id="dragSubmit">Submit</button>
-          <button class="secondary" id="dragClose">Back</button>
+          <button class="secondary" id="dragClose">⏸ Skip for now</button>
         </div>
       `);
       const bank = document.getElementById("dragBank");
@@ -1631,7 +1801,7 @@
           </div>
         </div>
         <div class="button-row">
-          <button class="secondary" id="spotClose">Back</button>
+          <button class="secondary" id="spotClose">⏸ Skip for now</button>
         </div>
       `);
       const labCanvas = document.getElementById("spotCanvas");
@@ -1693,7 +1863,7 @@
         <p class="puzzle-note" id="audioFeedback" style="margin-top:12px">Listen for flat cadence, clipped breaths, robotic emphasis.</p>
         <div class="button-row">
           <button class="primary" id="audioSubmit">Submit tags</button>
-          <button class="secondary" id="audioClose">Back</button>
+          <button class="secondary" id="audioClose">⏸ Skip for now</button>
         </div>
       `);
       const grid = document.getElementById("audioGrid");
@@ -1785,7 +1955,7 @@
         <div id="reflexBody" style="margin-top:14px"></div>
         <p class="puzzle-note" id="reflexFeedback" style="margin-top:12px">Round 1 of ${total}.</p>
         <div class="button-row">
-          <button class="secondary" id="reflexClose">Back</button>
+          <button class="secondary" id="reflexClose">⏸ Skip for now</button>
         </div>
       `);
       const body = document.getElementById("reflexBody");
@@ -1876,7 +2046,7 @@
         <div class="button-row">
           <button class="primary" id="forgeSubmit">Forge</button>
           <button class="secondary" id="forgeHint">Hint</button>
-          <button class="secondary" id="forgeClose">Back</button>
+          <button class="secondary" id="forgeClose">⏸ Leave boss for now</button>
         </div>
       `);
       const render = () => {
@@ -1948,7 +2118,7 @@
         <div class="button-row">
           <button class="primary" id="sourceSubmit">Repair Bridge</button>
           <button class="secondary" id="sourceHint">Hint</button>
-          <button class="secondary" id="sourceClose">Back</button>
+          <button class="secondary" id="sourceClose">⏸ Leave boss for now</button>
         </div>
       `);
       const cardHtml = (s) => `<button class="source-card" data-source="${s.id}">${escapeHtml(s.title)}<small>${escapeHtml(s.detail)}</small></button>`;
@@ -2019,7 +2189,7 @@
         <div class="button-row">
           <button class="primary" id="deepfakeSubmit">Submit findings</button>
           <button class="secondary" id="deepfakeHint">Hint</button>
-          <button class="secondary" id="deepfakeClose">Back</button>
+          <button class="secondary" id="deepfakeClose">⏸ Leave boss for now</button>
         </div>
       `);
       const labCanvas = document.getElementById("forensicsCanvas");
@@ -2094,7 +2264,7 @@
         <div class="button-row">
           <button class="primary" id="privacySubmit">Lock vault</button>
           <button class="secondary" id="privacyHint">Hint</button>
-          <button class="secondary" id="privacyClose">Back</button>
+          <button class="secondary" id="privacyClose">⏸ Leave boss for now</button>
         </div>
       `);
       const render = () => {
@@ -2155,7 +2325,7 @@
         <div class="button-row">
           <button class="primary" id="wellbeingSubmit">Open gate</button>
           <button class="secondary" id="wellbeingHint">Hint</button>
-          <button class="secondary" id="wellbeingClose">Back</button>
+          <button class="secondary" id="wellbeingClose">⏸ Leave boss for now</button>
         </div>
       `);
       const renderHabits = () => {
@@ -2252,7 +2422,7 @@
         <div class="button-row">
           <button class="primary" id="bossSubmit">Defeat Boss</button>
           <button class="secondary" id="bossHint">Hint</button>
-          <button class="secondary" id="bossClose">Back</button>
+          <button class="secondary" id="bossClose">⏸ Leave boss for now</button>
         </div>
       `);
       const renderBoss = () => {
@@ -2766,73 +2936,235 @@
     }
   }
 
-  function drawPlayer(player, time, accent) {
+  function drawPlayer(player, time, accent, avatar) {
     if (!player) return;
     if (player.invuln > 0 && Math.floor(time * 16) % 2 === 0) return;
-    const x = player.x;
-    const y = player.y;
+    const ctx2 = ctx;
+    ctx2.save();
     const bob = player.grounded ? Math.sin(time * 11) * Math.min(3, Math.abs(player.vx) / 90) : 0;
-    ctx.save();
-    ctx.translate(x + player.w / 2, y + bob);
-    ctx.scale(player.facing, 1);
-
-    // Roblox-blocky proportions:
-    // Head 26x22, torso 32x30, arms 10x28 each side, legs 12x22 each
-    // Total height ~80
-    const h = player.h;
-
-    // Shadow
-    ctx.fillStyle = "rgba(0,0,0,0.4)";
-    ctx.beginPath();
-    ctx.ellipse(0, h, 22, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Legs (dark blocky)
-    drawRobloxBlock(-12, h - 22, 10, 22, "#0c1024", "#1a2244");
-    drawRobloxBlock(2, h - 22, 10, 22, "#0c1024", "#1a2244");
-
-    // Torso (with neon stripe)
-    drawRobloxBlock(-16, h - 52, 32, 30, "#191e3e", "#2a3260");
-    ctx.fillStyle = accent;
-    ctx.shadowColor = accent;
-    ctx.shadowBlur = 8;
-    ctx.fillRect(-14, h - 38, 28, 4);
-    ctx.fillRect(-3, h - 50, 6, 28);
-    ctx.shadowBlur = 0;
-
-    // Arms
-    drawRobloxBlock(-26, h - 50, 10, 26, "#191e3e", "#2a3260");
-    drawRobloxBlock(16, h - 50, 10, 26, "#191e3e", "#2a3260");
-
-    // Head
-    drawRobloxBlock(-13, h - 78, 26, 22, "#0e1224", "#1f2647");
-    // Visor
-    ctx.fillStyle = accent;
-    ctx.shadowColor = accent;
-    ctx.shadowBlur = 10;
-    ctx.fillRect(-11, h - 70, 22, 6);
-    ctx.shadowBlur = 0;
-    // Eye dot
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.fillRect(-2, h - 68, 3, 3);
-
-    ctx.restore();
+    ctx2.translate(player.x + player.w / 2, player.y + bob);
+    ctx2.scale(player.facing, 1);
+    drawAvatar(ctx2, accent, avatar || DEFAULT_AVATAR, player.h, time);
+    ctx2.restore();
   }
 
-  function drawRobloxBlock(x, y, w, h, base, top) {
-    // Front face
-    ctx.fillStyle = base;
-    ctx.fillRect(x, y, w, h);
-    // Top sliver (3D feel)
-    ctx.fillStyle = top;
-    ctx.fillRect(x, y, w, 3);
-    // Right shadow
-    ctx.fillStyle = "rgba(0,0,0,0.4)";
-    ctx.fillRect(x + w - 2, y, 2, h);
-    // Outline
-    ctx.strokeStyle = "rgba(0,0,0,0.6)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  // Draws the avatar centered horizontally at (0,0), with feet at y = bottom.
+  // Used by both in-game player and the customizer preview.
+  function drawAvatar(c, accent, avatar, bottom, time) {
+    const bodyColor = avatarBodyColor(avatar);
+    const bodyDark = darken(bodyColor.startsWith("#") ? bodyColor : rgbToHex(bodyColor), 0.4);
+    const bodyLight = lighten(bodyColor.startsWith("#") ? bodyColor : rgbToHex(bodyColor), 0.18);
+
+    // Shadow
+    c.fillStyle = "rgba(0,0,0,0.4)";
+    c.beginPath();
+    c.ellipse(0, bottom, 22, 5, 0, 0, Math.PI * 2);
+    c.fill();
+
+    // Legs
+    drawRobloxBlock(c, -12, bottom - 22, 10, 22, "#1a1c30", "#2a2c4a");
+    drawRobloxBlock(c, 2, bottom - 22, 10, 22, "#1a1c30", "#2a2c4a");
+
+    // Torso with body color + neon stripe (level accent)
+    drawRobloxBlock(c, -16, bottom - 52, 32, 30, bodyColor, bodyLight);
+    c.fillStyle = accent;
+    c.shadowColor = accent;
+    c.shadowBlur = 8;
+    c.fillRect(-14, bottom - 38, 28, 3);
+    c.fillRect(-3, bottom - 50, 6, 28);
+    c.shadowBlur = 0;
+
+    // Arms (body color)
+    drawRobloxBlock(c, -26, bottom - 50, 10, 26, bodyColor, bodyLight);
+    drawRobloxBlock(c, 16, bottom - 50, 10, 26, bodyColor, bodyLight);
+
+    // Head (shape varies)
+    const headTop = bottom - 78;
+    const headW = 26;
+    const headH = 22;
+    const headBase = "#f3d6a8";   // friendly skin/face base
+    const headLight = "#fff0d4";
+    drawHeadShape(c, avatar.head, -headW / 2, headTop, headW, headH, headBase, headLight);
+
+    // Face
+    drawFace(c, avatar.face, accent, headTop, headW, headH, time || 0);
+
+    // Hat / accessory
+    drawHat(c, avatar.hat, headTop, headW, headH, accent, bodyColor, time || 0);
+  }
+
+  function drawHeadShape(c, shape, x, y, w, h, base, top) {
+    if (shape === "round") {
+      // Soft round head — circle with subtle 3D top
+      c.fillStyle = base;
+      c.beginPath();
+      c.arc(x + w / 2, y + h / 2 + 1, w / 2, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = top;
+      c.beginPath();
+      c.arc(x + w / 2, y + h / 2 + 1, w / 2, Math.PI * 1.05, Math.PI * 1.95);
+      c.lineTo(x + w / 2, y + h / 2 - 4);
+      c.fill();
+      c.strokeStyle = "rgba(0,0,0,0.4)";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.arc(x + w / 2, y + h / 2 + 1, w / 2, 0, Math.PI * 2);
+      c.stroke();
+    } else if (shape === "dome") {
+      // Square bottom, rounded top
+      c.fillStyle = base;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(x, y, w, h, [w / 2, w / 2, 4, 4]);
+      else c.rect(x, y, w, h);
+      c.fill();
+      c.fillStyle = top;
+      c.fillRect(x, y, w, 3);
+      c.strokeStyle = "rgba(0,0,0,0.4)";
+      c.lineWidth = 1;
+      c.stroke();
+    } else {
+      // square (default)
+      drawRobloxBlock(c, x, y, w, h, base, top);
+    }
+  }
+
+  function drawFace(c, face, accent, headTop, w, h, time) {
+    if (face === "goggles") {
+      // Two glowing rings
+      c.shadowColor = accent;
+      c.shadowBlur = 8;
+      c.strokeStyle = accent;
+      c.lineWidth = 2;
+      c.fillStyle = "#0a0c1a";
+      [-7, 7].forEach((cx) => {
+        c.beginPath();
+        c.arc(cx, headTop + 10, 5, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+      });
+      c.shadowBlur = 0;
+      // Tiny pupil shimmer
+      c.fillStyle = accent;
+      c.fillRect(-7, headTop + 9, 1, 2);
+      c.fillRect(7, headTop + 9, 1, 2);
+    } else if (face === "bigeyes") {
+      // Cute big eyes with pupils
+      c.fillStyle = "#ffffff";
+      c.beginPath(); c.arc(-6, headTop + 11, 4, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(6, headTop + 11, 4, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#0a0c1a";
+      const blink = Math.sin(time * 1.5) > 0.96 ? 0 : 2.5;
+      c.beginPath(); c.arc(-5, headTop + 12, blink, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(7, headTop + 12, blink, 0, Math.PI * 2); c.fill();
+      // Tiny smile
+      c.strokeStyle = "#a83a3a";
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(-3, headTop + 17);
+      c.quadraticCurveTo(0, headTop + 19, 3, headTop + 17);
+      c.stroke();
+    } else if (face === "smile") {
+      // Two dot eyes + curve smile
+      c.fillStyle = "#0a0c1a";
+      c.fillRect(-6, headTop + 9, 3, 3);
+      c.fillRect(3, headTop + 9, 3, 3);
+      c.strokeStyle = "#a83a3a";
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(-5, headTop + 16);
+      c.quadraticCurveTo(0, headTop + 19, 5, headTop + 16);
+      c.stroke();
+      // Cheeks
+      c.fillStyle = "rgba(255, 120, 150, 0.4)";
+      c.beginPath(); c.arc(-9, headTop + 15, 2, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(9, headTop + 15, 2, 0, Math.PI * 2); c.fill();
+    } else {
+      // band (default visor)
+      c.fillStyle = accent;
+      c.shadowColor = accent;
+      c.shadowBlur = 10;
+      c.fillRect(-11, headTop + 8, 22, 6);
+      c.shadowBlur = 0;
+      c.fillStyle = "rgba(255,255,255,0.9)";
+      c.fillRect(-2, headTop + 10, 3, 3);
+    }
+  }
+
+  function drawHat(c, hat, headTop, w, h, accent, bodyColor, time) {
+    const cx = 0;
+    if (hat === "beanie") {
+      c.fillStyle = bodyColor;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(-w / 2 - 1, headTop - 7, w + 2, 11, [6, 6, 0, 0]);
+      else c.rect(-w / 2 - 1, headTop - 7, w + 2, 11);
+      c.fill();
+      // Pom
+      c.fillStyle = "#fff";
+      c.beginPath(); c.arc(cx, headTop - 11, 4, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(0,0,0,0.5)";
+      c.lineWidth = 1;
+      c.stroke();
+    } else if (hat === "antenna") {
+      c.strokeStyle = "#cfd6ee";
+      c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cx, headTop); c.lineTo(cx, headTop - 14); c.stroke();
+      c.fillStyle = accent;
+      c.shadowColor = accent;
+      c.shadowBlur = 10 + Math.sin(time * 4) * 3;
+      c.beginPath(); c.arc(cx, headTop - 16, 3.5, 0, Math.PI * 2); c.fill();
+      c.shadowBlur = 0;
+    } else if (hat === "halo") {
+      c.shadowColor = "#ffe98a";
+      c.shadowBlur = 14;
+      c.strokeStyle = "#ffe98a";
+      c.lineWidth = 2;
+      c.beginPath();
+      c.ellipse(cx, headTop - 5 + Math.sin(time * 1.6) * 1, 14, 4, 0, 0, Math.PI * 2);
+      c.stroke();
+      c.shadowBlur = 0;
+    } else if (hat === "bow") {
+      c.fillStyle = "#ff7aa8";
+      c.beginPath();
+      c.moveTo(cx - 9, headTop - 1);
+      c.lineTo(cx - 1, headTop - 6);
+      c.lineTo(cx - 1, headTop + 4);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.moveTo(cx + 9, headTop - 1);
+      c.lineTo(cx + 1, headTop - 6);
+      c.lineTo(cx + 1, headTop + 4);
+      c.closePath();
+      c.fill();
+      c.fillStyle = "#ff5da0";
+      c.fillRect(cx - 2, headTop - 4, 4, 6);
+    } else if (hat === "cap") {
+      c.fillStyle = bodyColor;
+      c.fillRect(-w / 2, headTop - 5, w, 6);
+      // Brim
+      c.fillRect(-w / 2 - 4, headTop - 1, w + 4, 3);
+      c.strokeStyle = "rgba(0,0,0,0.5)";
+      c.lineWidth = 1;
+      c.strokeRect(-w / 2 + 0.5, headTop - 4.5, w - 1, 5);
+    }
+  }
+
+  function drawRobloxBlock(c, x, y, w, h, base, top) {
+    c.fillStyle = base;
+    c.fillRect(x, y, w, h);
+    c.fillStyle = top;
+    c.fillRect(x, y, w, 3);
+    c.fillStyle = "rgba(0,0,0,0.4)";
+    c.fillRect(x + w - 2, y, 2, h);
+    c.strokeStyle = "rgba(0,0,0,0.5)";
+    c.lineWidth = 1;
+    c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  }
+
+  function rgbToHex(rgb) {
+    const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb);
+    if (!m) return rgb;
+    return "#" + [1, 2, 3].map((i) => parseInt(m[i], 10).toString(16).padStart(2, "0")).join("");
   }
 
   function drawHudOverlay(level, game) {
@@ -2890,7 +3222,7 @@
     ctx.shadowBlur = 16;
     ctx.font = "900 64px ui-monospace, monospace";
     ctx.textAlign = "center";
-    ctx.fillText("DOOMLOOP", LOGICAL_W / 2, LOGICAL_H / 2);
+    ctx.fillText("MERLIN", LOGICAL_W / 2, LOGICAL_H / 2);
     ctx.shadowBlur = 0;
     ctx.textAlign = "left";
   }
