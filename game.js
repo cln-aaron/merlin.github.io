@@ -918,7 +918,7 @@
       this.started = false;
       const draft = { ...this.avatar };
       const saveLabel = opts.thenStart ? "✓ Save & start the run" : "✓ Save avatar";
-      const cancelLabel = opts.thenStart ? "← Back" : "← Back to title";
+      const cancelLabel = "← Back to title";
       setOverlay(`
         <p class="screen-kicker">// ${opts.thenStart ? "STEP 2 OF 2 — DESIGN YOUR PLAYER" : "CUSTOMISE AVATAR"}</p>
         <h2 class="level-title">Make it yours</h2>
@@ -1090,6 +1090,7 @@
           <div class="button-row">
             <button class="primary" id="tutNext">${isLast ? "✓ Got it — design my avatar" : "▶ Next instruction"}</button>
             ${!isFirst ? `<button class="secondary" id="tutBack">← Previous</button>` : ""}
+            <button class="secondary" id="tutHome">← Back to title</button>
           </div>
         `);
         const c = document.getElementById("tutCanvas").getContext("2d");
@@ -1106,6 +1107,12 @@
         });
         const back = document.getElementById("tutBack");
         if (back) back.addEventListener("click", () => { i -= 1; renderSlide(); });
+        document.getElementById("tutHome").addEventListener("click", () => {
+          cancelAnimationFrame(raf);
+          if (this.cleanup) this.cleanup();
+          this.cleanup = null;
+          this.showStartScreen();
+        });
       };
 
       const finish = () => {
