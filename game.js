@@ -598,6 +598,7 @@
   const BEST_KEY = "neurobloxBestTime";
   const PROGRESS_KEY = "neurobloxProgress";
   const AVATAR_KEY = "doomloopAvatar";
+  const TUTORIAL_KEY = "merlinTutorialSeen";
 
   // Cute, wholesome customisation. Visor color comes from the current level's accent.
   const AVATAR_OPTIONS = {
@@ -869,28 +870,25 @@
         ? `<li>Best run: <strong style="color:var(--lime)">${formatTime(Number(bestRaw))}</strong></li>`
         : `<li>Best run: <strong style="color:var(--muted)">unset</strong></li>`;
       const hasSave = this.levelIndex > 0;
-      const continueLabel = hasSave ? `Continue (World ${this.levelIndex + 1})` : "Start game";
+      const primaryButton = hasSave
+        ? `<button class="primary" id="continueRun">▶ Continue your run (World ${this.levelIndex + 1})</button>
+           <button class="secondary" id="startFresh">↺ Start a new run from World 1</button>`
+        : `<button class="primary" id="startFresh">▶ Begin your first run</button>`;
       setOverlay(`
         <div class="screen-grid">
           <div>
             <h1 class="screen-title">MERLIN</h1>
-            <ul class="feature-list">
-              <li><strong>How to win:</strong> in each world, walk into the glowing ▲ nodes to trigger mini-challenges. Then press <kbd>E</kbd> (or tap <kbd>!</kbd>) at the boss tower. The portal opens once both are cleared.</li>
-              <li><strong>Keyboard:</strong> arrows or WASD = move · Space = jump · E or Enter = interact · Esc = pause.</li>
-              <li><strong>Mobile:</strong> use the on-screen ‹ › arrows, ↑ to jump, ! to interact.</li>
-              <li><strong>Scored on time.</strong> Bonus for first-try clears. Penalty for wrong attempts and hints.</li>
-              ${bestLine}
-            </ul>
+            <p class="lead" style="margin-top:-4px">A 6-world AI-safety run. ${hasSave ? "Pick up where you left off, or wipe the save and try again." : "First time? Hit Begin — we'll walk you through it."}</p>
+            ${bestRaw ? `<p style="color:var(--lime);font-weight:800;letter-spacing:.08em;margin:-6px 0 14px">Best run so far: ${formatTime(Number(bestRaw))}</p>` : ""}
             <div class="button-row">
-              <button class="primary" id="startGame">▶ ${continueLabel}</button>
-              <button class="secondary" id="startFresh">↺ New game (clear save)</button>
+              ${primaryButton}
             </div>
             <div class="button-row" style="margin-top:6px">
-              <button class="secondary" id="customizeAvatar">★ Customise avatar</button>
+              <button class="secondary" id="customizeAvatar">★ Edit my avatar</button>
+              <button class="secondary" id="howToPlay">? How to play</button>
               <button class="secondary" id="hostVerify">⚑ Host: verify a run code</button>
             </div>
             <div class="author-card">
-              <img class="author-avatar" src="assets/aaron.png" alt="Aaron Ang" />
               <div class="author-text">
                 <span class="author-label">Designed, conceptualised &amp; built by</span>
                 <strong>Aaron Ang</strong>
@@ -908,20 +906,24 @@
           </div>
         </div>
       `);
-      document.getElementById("startGame").addEventListener("click", () => this.startRun(false));
+      const continueBtn = document.getElementById("continueRun");
+      if (continueBtn) continueBtn.addEventListener("click", () => this.startRun(false));
       document.getElementById("startFresh").addEventListener("click", () => this.startRun(true));
       document.getElementById("hostVerify").addEventListener("click", () => this.showVerifyForm());
-      document.getElementById("customizeAvatar").addEventListener("click", () => this.showAvatarCustomizer());
+      document.getElementById("customizeAvatar").addEventListener("click", () => this.showAvatarCustomizer({}));
+      document.getElementById("howToPlay").addEventListener("click", () => this.showTutorial({ onDone: () => this.showStartScreen() }));
     }
 
-    showAvatarCustomizer() {
+    showAvatarCustomizer(opts = {}) {
       this.paused = true;
       this.started = false;
       const draft = { ...this.avatar };
+      const saveLabel = opts.thenStart ? "✓ Save & start the run" : "✓ Save avatar";
+      const cancelLabel = opts.thenStart ? "← Back" : "← Back to title";
       setOverlay(`
-        <p class="screen-kicker">// CUSTOMISE AVATAR</p>
+        <p class="screen-kicker">// ${opts.thenStart ? "STEP 2 OF 2 — DESIGN YOUR PLAYER" : "CUSTOMISE AVATAR"}</p>
         <h2 class="level-title">Make it yours</h2>
-        <p class="lead">Pick a body colour, head shape, hat, and face. Visor glow matches the world you're in.</p>
+        <p class="lead">Pick a body colour, head shape, face, and hat. Visor glow matches the world you're in.</p>
 
         <div class="avatar-build">
           <div class="avatar-preview-box">
@@ -932,9 +934,9 @@
         </div>
 
         <div class="button-row">
-          <button class="primary" id="avatarSave">✓ Save avatar</button>
-          <button class="secondary" id="avatarReset">Reset to default</button>
-          <button class="secondary" id="avatarBack">← Back to title</button>
+          <button class="primary" id="avatarSave">${saveLabel}</button>
+          <button class="secondary" id="avatarReset">↺ Reset to default</button>
+          <button class="secondary" id="avatarBack">${cancelLabel}</button>
         </div>
       `);
 
@@ -1009,10 +1011,14 @@
       document.getElementById("avatarSave").addEventListener("click", () => {
         this.avatar = { ...draft };
         saveAvatar(this.avatar);
-        showToast("Avatar saved.");
         if (this.cleanup) this.cleanup();
         this.cleanup = null;
-        this.showStartScreen();
+        if (opts.thenStart) {
+          this._beginRun(!!opts.fresh);
+        } else {
+          showToast("Avatar saved.");
+          this.showStartScreen();
+        }
       });
       document.getElementById("avatarReset").addEventListener("click", () => {
         Object.assign(draft, DEFAULT_AVATAR);
@@ -1021,8 +1027,100 @@
       document.getElementById("avatarBack").addEventListener("click", () => {
         if (this.cleanup) this.cleanup();
         this.cleanup = null;
-        this.showStartScreen();
+        if (opts.thenStart) {
+          // Bounce back to tutorial step 1 so the player can re-read instructions
+          this.showTutorial({ onDone: () => this.showAvatarCustomizer({ thenStart: true, fresh: opts.fresh }) });
+        } else {
+          this.showStartScreen();
+        }
       });
+    }
+
+    // Step-by-step tutorial. One instruction per slide, with an animated demo.
+    showTutorial({ onDone }) {
+      this.paused = true;
+      this.started = false;
+      const slides = [
+        {
+          title: "Move",
+          tag: "STEP 1 of 5 — MOVE",
+          body: "Use ← → on keyboard (or A / D), or the on-screen ‹ › arrows on mobile. Try walking right to start every world.",
+          draw: drawTutorialMove
+        },
+        {
+          title: "Jump over gaps",
+          tag: "STEP 2 of 5 — JUMP",
+          body: "Press Space (keyboard) or ↑ (mobile) to hop. Falling into a glitch pit costs you time.",
+          draw: drawTutorialJump
+        },
+        {
+          title: "Trigger mini-challenges",
+          tag: "STEP 3 of 5 — NODES",
+          body: "Walk into a glowing ▲ node. A mini-challenge will pop up — MCQ, deepfake spot, voice-clone audio, swipe sort, drag-and-drop, or a scroll-stop reflex test.",
+          draw: drawTutorialNode
+        },
+        {
+          title: "Beat the boss tower",
+          tag: "STEP 4 of 5 — BOSS",
+          body: "Each world has a boss tower. Stand next to it and press E (or tap !) to open the world's boss puzzle.",
+          draw: drawTutorialBoss
+        },
+        {
+          title: "Open the portal",
+          tag: "STEP 5 of 5 — PORTAL",
+          body: "Once you've cleared every node AND the boss, the portal unlocks. Run through it to reach the next world. Score = time + first-try clears. At the end, you'll get a code to show your host.",
+          draw: drawTutorialPortal
+        }
+      ];
+      let i = 0;
+      let raf = 0;
+      const startedAt = performance.now();
+
+      const renderSlide = () => {
+        const s = slides[i];
+        const isLast = i === slides.length - 1;
+        const isFirst = i === 0;
+        setOverlay(`
+          <p class="screen-kicker">// ${s.tag}</p>
+          <h2 class="level-title">${escapeHtml(s.title)}</h2>
+          <div class="tutorial-stage">
+            <canvas id="tutCanvas" width="640" height="320" aria-label="Tutorial demo"></canvas>
+          </div>
+          <p class="lead" style="margin-top:12px">${s.body}</p>
+          <div class="tutorial-progress">
+            ${slides.map((_, idx) => `<span class="dot ${idx === i ? "active" : ""} ${idx < i ? "done" : ""}"></span>`).join("")}
+          </div>
+          <div class="button-row">
+            <button class="primary" id="tutNext">${isLast ? "✓ Got it — next" : "▶ Next"}</button>
+            ${!isFirst ? `<button class="secondary" id="tutBack">← Back</button>` : ""}
+            <button class="secondary" id="tutSkip">Skip walkthrough</button>
+          </div>
+        `);
+        const c = document.getElementById("tutCanvas").getContext("2d");
+        const draw = () => {
+          const t = (performance.now() - startedAt) / 1000;
+          s.draw(c, t, this.avatar);
+          raf = requestAnimationFrame(draw);
+        };
+        cancelAnimationFrame(raf);
+        draw();
+        document.getElementById("tutNext").addEventListener("click", () => {
+          if (isLast) finish();
+          else { i += 1; renderSlide(); }
+        });
+        const back = document.getElementById("tutBack");
+        if (back) back.addEventListener("click", () => { i -= 1; renderSlide(); });
+        document.getElementById("tutSkip").addEventListener("click", () => finish());
+      };
+
+      const finish = () => {
+        cancelAnimationFrame(raf);
+        if (this.cleanup) this.cleanup();
+        this.cleanup = null;
+        if (typeof onDone === "function") onDone();
+      };
+      this.cleanup = () => cancelAnimationFrame(raf);
+      renderSlide();
     }
 
     showVerifyForm() {
@@ -1073,7 +1171,29 @@
 
     saveProgress() { safeStorageSet(PROGRESS_KEY, JSON.stringify({ levelIndex: this.levelIndex })); }
 
+    // Public entry: starts a run. New runs route through the tutorial (first
+    // time only) and the avatar customizer (always) before the world brief.
+    // `fresh = true` resets save and starts at world 1.
+    // `fresh = false` continues from the saved level (skips tutorial + avatar).
     startRun(fresh) {
+      const tutorialSeen = !!safeStorageGet(TUTORIAL_KEY);
+      const hasAvatar = !!safeStorageGet(AVATAR_KEY);
+      if (!fresh && tutorialSeen && hasAvatar && this.levelIndex > 0) {
+        // Continue: straight into the game.
+        this._beginRun(false);
+        return;
+      }
+      // First-time or fresh run → tutorial → avatar → world 1.
+      const goAvatar = () => this.showAvatarCustomizer({ thenStart: true, fresh });
+      if (!tutorialSeen) {
+        this.showTutorial({ onDone: () => { safeStorageSet(TUTORIAL_KEY, "1"); goAvatar(); } });
+      } else {
+        goAvatar();
+      }
+    }
+
+    // Internal: actually starts/initialises the run.
+    _beginRun(fresh) {
       if (fresh) {
         this.levelIndex = 0;
         this.puzzlesSolved.clear();
@@ -3306,6 +3426,301 @@
     context.textAlign = "center";
     context.fillText("NEWS @ 9", cx, cy + 175);
     context.textAlign = "left";
+  }
+
+  // ============================================================
+  // TUTORIAL DEMOS — short, looping animations rendered to a 640x320 canvas.
+  // ============================================================
+  function tutorialBackground(c, accent) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    const grad = c.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#06081a");
+    grad.addColorStop(1, "#0a0c20");
+    c.fillStyle = grad;
+    c.fillRect(0, 0, w, h);
+    // Floor line
+    c.strokeStyle = `rgba(${hexToRgb(accent)}, 0.5)`;
+    c.lineWidth = 2;
+    c.shadowColor = accent;
+    c.shadowBlur = 8;
+    c.beginPath();
+    c.moveTo(0, h - 60);
+    c.lineTo(w, h - 60);
+    c.stroke();
+    c.shadowBlur = 0;
+    // Floor grid
+    c.strokeStyle = `rgba(${hexToRgb(accent)}, 0.18)`;
+    c.lineWidth = 1;
+    for (let x = 0; x < w; x += 40) {
+      c.beginPath(); c.moveTo(x, h - 60); c.lineTo(x, h - 8); c.stroke();
+    }
+  }
+
+  function drawTutorialAvatar(c, x, baseline, time, avatar, dir = 1, accent = "#22e3ff") {
+    c.save();
+    c.translate(x, 0);
+    c.scale(dir, 1);
+    drawAvatar(c, accent, avatar || DEFAULT_AVATAR, baseline, time);
+    c.restore();
+  }
+
+  function drawTutorialMove(c, t, avatar) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    tutorialBackground(c, "#22e3ff");
+    // Avatar oscillates left-right
+    const phase = (Math.sin(t * 1.4) + 1) / 2; // 0..1
+    const x = 90 + phase * (w - 180);
+    const dir = Math.cos(t * 1.4) > 0 ? 1 : -1;
+    drawTutorialAvatar(c, x, h - 60, t, avatar, dir, "#22e3ff");
+    // Key indicator
+    drawTutorialKeyHint(c, ["←", "→"], 20, h - 30);
+    drawTutorialKeyHint(c, ["A", "D"], 110, h - 30);
+    drawTutorialKeyHint(c, ["‹", "›"], w - 110, h - 30, true);
+    // Caption strip
+    drawTutorialCaption(c, "→ Walk right to begin every world", w / 2, 36);
+  }
+
+  function drawTutorialJump(c, t, avatar) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    tutorialBackground(c, "#b6ff5c");
+    // Gap in the floor
+    c.fillStyle = "#04050d";
+    c.fillRect(w / 2 - 50, h - 60, 100, 60);
+    // Glitch danger
+    c.fillStyle = "#ff5070";
+    c.shadowColor = "#ff5070";
+    c.shadowBlur = 10;
+    for (let i = 0; i < 5; i += 1) {
+      c.fillRect(w / 2 - 48 + i * 22, h - 8 + Math.sin(t * 6 + i) * 2, 18, 4);
+    }
+    c.shadowBlur = 0;
+    // Jumping avatar: parabola crossing the gap
+    const cycle = (t % 2.4) / 2.4; // 0..1 over each loop
+    const startX = w / 2 - 110;
+    const endX = w / 2 + 110;
+    const x = startX + cycle * (endX - startX);
+    const arc = -Math.sin(cycle * Math.PI) * 80; // up
+    drawTutorialAvatar(c, x, h - 60 + arc, t, avatar, 1, "#b6ff5c");
+    // Key indicator
+    drawTutorialKeyHint(c, ["Space"], 20, h - 30);
+    drawTutorialKeyHint(c, ["↑"], 130, h - 30, true);
+    drawTutorialCaption(c, "↑ Jump over glitch pits", w / 2, 36);
+  }
+
+  function drawTutorialNode(c, t, avatar) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    tutorialBackground(c, "#ff4dd2");
+    // Node on the right
+    const nx = w - 160;
+    const ny = h - 130;
+    const pulse = 0.6 + 0.4 * Math.sin(t * 2);
+    c.save();
+    c.shadowColor = "#ff4dd2";
+    c.shadowBlur = 18 + pulse * 8;
+    c.strokeStyle = "#ff4dd2";
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(nx, ny, 28 + pulse * 4, 0, Math.PI * 2); c.stroke();
+    c.translate(nx, ny);
+    c.rotate(Math.PI / 4 + t * 0.6);
+    c.fillStyle = "rgba(8, 10, 24, 0.85)";
+    c.fillRect(-16, -16, 32, 32);
+    c.strokeRect(-16, -16, 32, 32);
+    c.shadowBlur = 0;
+    c.rotate(-Math.PI / 4 - t * 0.6);
+    c.fillStyle = "#ff4dd2";
+    c.font = "900 14px ui-monospace, monospace";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText("?", 0, 1);
+    c.restore();
+
+    // Avatar approaches node
+    const cycle = (t % 4) / 4;
+    const ax = 80 + cycle * (nx - 60 - 80);
+    drawTutorialAvatar(c, ax, h - 60, t, avatar, 1, "#ff4dd2");
+
+    // Pop popup near node when close
+    if (cycle > 0.85) {
+      c.fillStyle = "rgba(8,10,22,0.92)";
+      c.strokeStyle = "#ff4dd2";
+      c.shadowColor = "#ff4dd2";
+      c.shadowBlur = 10;
+      c.lineWidth = 1;
+      c.fillRect(nx - 100, ny - 80, 200, 36);
+      c.strokeRect(nx - 100, ny - 80, 200, 36);
+      c.shadowBlur = 0;
+      c.fillStyle = "#ff4dd2";
+      c.font = "900 14px ui-monospace, monospace";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText("MINI-CHALLENGE!", nx, ny - 62);
+    }
+    drawTutorialCaption(c, "▲ Walk into a glowing node to trigger a challenge", w / 2, 36);
+  }
+
+  function drawTutorialBoss(c, t, avatar) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    tutorialBackground(c, "#ffc94a");
+    // Boss tower on the right
+    const tx = w - 180;
+    const ty = h - 60 - 110;
+    c.save();
+    const grad = c.createLinearGradient(tx, ty, tx, ty + 110);
+    grad.addColorStop(0, "#23284a");
+    grad.addColorStop(1, "#0d1128");
+    c.fillStyle = grad;
+    c.fillRect(tx, ty, 86, 110);
+    c.strokeStyle = "#ffc94a";
+    c.shadowColor = "#ffc94a";
+    c.shadowBlur = 12;
+    c.lineWidth = 2;
+    c.strokeRect(tx, ty, 86, 110);
+    c.shadowBlur = 0;
+    c.fillStyle = "#04050d";
+    c.fillRect(tx + 12, ty + 14, 62, 30);
+    c.fillStyle = "#ffc94a";
+    c.font = "900 14px ui-monospace, monospace";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText("AI?", tx + 43, ty + 29);
+    // Status light
+    c.fillStyle = "#ff5070";
+    c.shadowColor = "#ff5070";
+    c.shadowBlur = 12;
+    c.beginPath(); c.arc(tx + 43, ty + 90, 6, 0, Math.PI * 2); c.fill();
+    c.shadowBlur = 0;
+    c.restore();
+
+    // Avatar standing next to tower
+    drawTutorialAvatar(c, tx - 60, h - 60, t, avatar, 1, "#ffc94a");
+
+    // [E] prompt blinking
+    if (Math.sin(t * 4) > 0) {
+      c.fillStyle = "rgba(8,10,22,0.92)";
+      c.strokeStyle = "#ffc94a";
+      c.shadowColor = "#ffc94a";
+      c.shadowBlur = 10;
+      c.lineWidth = 1;
+      c.fillRect(tx - 92, ty + 20, 80, 32);
+      c.strokeRect(tx - 92, ty + 20, 80, 32);
+      c.shadowBlur = 0;
+      c.fillStyle = "#ffc94a";
+      c.font = "900 14px ui-monospace, monospace";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText("[E] OPEN", tx - 52, ty + 36);
+    }
+    drawTutorialCaption(c, "🛡 Press E (or tap !) at the boss tower", w / 2, 36);
+  }
+
+  function drawTutorialPortal(c, t, avatar) {
+    const w = c.canvas.width;
+    const h = c.canvas.height;
+    tutorialBackground(c, "#5cffb6");
+    // Cycle: locked (0..1.5s) → unlocking (1.5..2s) → unlocked + run through (2..4s)
+    const cycle = (t % 4);
+    const unlocked = cycle > 1.5;
+
+    // Checklist on left
+    const items = ["▲ Nodes", "🛡 Boss"];
+    items.forEach((label, idx) => {
+      const y = 80 + idx * 36;
+      c.fillStyle = "rgba(8,10,22,0.85)";
+      c.fillRect(20, y - 14, 160, 28);
+      c.strokeStyle = unlocked ? "#5cffb6" : "rgba(140,220,255,0.4)";
+      c.lineWidth = 1;
+      c.strokeRect(20, y - 14, 160, 28);
+      c.fillStyle = unlocked ? "#5cffb6" : "rgba(180,200,230,0.6)";
+      c.font = "900 14px ui-monospace, monospace";
+      c.textAlign = "left";
+      c.textBaseline = "middle";
+      c.fillText(label, 32, y);
+      // checkmark
+      if (unlocked) {
+        c.fillText("✓", 160, y);
+      }
+    });
+
+    // Portal on right
+    const px = w - 130;
+    const py = h - 60 - 60;
+    c.save();
+    c.translate(px, py);
+    const ringColor = unlocked ? "#5cffb6" : "#5c6682";
+    c.shadowColor = ringColor;
+    c.shadowBlur = unlocked ? 22 : 6;
+    c.strokeStyle = ringColor;
+    c.lineWidth = 6;
+    c.beginPath();
+    c.ellipse(0, 0, 36, 54, 0, 0, Math.PI * 2);
+    c.stroke();
+    c.shadowBlur = 0;
+    const inner = c.createRadialGradient(0, 0, 4, 0, 0, 50);
+    inner.addColorStop(0, unlocked ? "rgba(255,255,255,0.95)" : "rgba(180,180,200,0.6)");
+    inner.addColorStop(1, unlocked ? "rgba(34,227,255,0.0)" : "rgba(60,70,90,0.0)");
+    c.fillStyle = inner;
+    c.beginPath();
+    c.ellipse(0, 0, 28, 44, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = unlocked ? "#04050d" : "#9aa5c2";
+    c.font = "900 12px ui-monospace, monospace";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(unlocked ? "GO" : "LOCK", 0, 2);
+    c.restore();
+
+    // Avatar approaching/entering the portal
+    let ax;
+    if (cycle < 2) {
+      ax = 220;
+    } else {
+      const enterPhase = Math.min(1, (cycle - 2) / 1.6);
+      ax = 220 + enterPhase * (px - 30 - 220);
+    }
+    drawTutorialAvatar(c, ax, h - 60, t, avatar, 1, "#5cffb6");
+
+    drawTutorialCaption(c, "🚪 Clear all + boss → portal opens → next world", w / 2, 36);
+  }
+
+  function drawTutorialKeyHint(c, keys, x, y, active = false) {
+    c.save();
+    c.font = "900 12px ui-monospace, monospace";
+    c.textAlign = "left";
+    c.textBaseline = "middle";
+    let cursor = x;
+    for (const key of keys) {
+      const tw = Math.max(20, c.measureText(key).width + 12);
+      c.fillStyle = "rgba(8,10,22,0.85)";
+      c.fillRect(cursor, y - 12, tw, 24);
+      c.strokeStyle = active ? "#22e3ff" : "rgba(140,220,255,0.4)";
+      c.lineWidth = 1;
+      c.strokeRect(cursor + 0.5, y - 11.5, tw - 1, 23);
+      c.fillStyle = active ? "#22e3ff" : "#cfd6ee";
+      c.fillText(key, cursor + 6, y + 1);
+      cursor += tw + 4;
+    }
+    c.restore();
+  }
+
+  function drawTutorialCaption(c, text, x, y) {
+    c.save();
+    c.font = "900 14px ui-monospace, monospace";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    const w = c.measureText(text).width + 32;
+    c.fillStyle = "rgba(8,10,22,0.92)";
+    c.fillRect(x - w / 2, y - 16, w, 32);
+    c.strokeStyle = "rgba(140,220,255,0.45)";
+    c.lineWidth = 1;
+    c.strokeRect(x - w / 2 + 0.5, y - 15.5, w - 1, 31);
+    c.fillStyle = "#cfd6ee";
+    c.fillText(text, x, y + 1);
+    c.restore();
   }
 
   function drawSyntheticPhoto(context, t) {
