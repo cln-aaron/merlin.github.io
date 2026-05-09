@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#5ec8ff">
+    <title>Prompt Parkour: AI Wellness Quest</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main id="app" aria-label="Prompt Parkour game">
+      <section id="hud" aria-live="polite">
+        <div class="hud-pill">
+          <span class="hud-label">Level</span>
+          <strong id="hudLevel">1/6</strong>
+        </div>
+        <div class="hud-pill">
+          <span class="hud-label">Time</span>
+          <strong id="hudTime">00:00</strong>
+        </div>
+        <div class="hud-pill">
+          <span class="hud-label">Score</span>
+          <strong id="hudScore">0</strong>
+        </div>
+        <div class="hud-pill wide">
+          <span class="hud-label">Goal</span>
+          <strong id="hudGoal">Collect spark blocks</strong>
+        </div>
+        <button id="pauseButton" class="icon-button" type="button" aria-label="Pause game">II</button>
+      </section>
+
+      <section id="canvasShell">
+        <canvas id="gameCanvas" width="1280" height="720" aria-label="Side-scrolling platform game"></canvas>
+        <div id="toast" role="status"></div>
+      </section>
+
+      <section id="mobileControls" aria-label="Touch game controls">
+        <div class="dpad">
+          <button class="control-button" id="touchLeft" type="button" aria-label="Move left">‹</button>
+          <button class="control-button" id="touchRight" type="button" aria-label="Move right">›</button>
+        </div>
+        <div class="actions">
+          <button class="control-button action" id="touchAction" type="button" aria-label="Interact">!</button>
+          <button class="control-button jump" id="touchJump" type="button" aria-label="Jump">↑</button>
+        </div>
+      </section>
+
+      <section id="overlay" class="overlay visible">
+        <div id="overlayPanel" class="panel">
+          <div id="overlayContent"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
