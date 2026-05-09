@@ -878,8 +878,7 @@
         <div class="screen-grid">
           <div>
             <h1 class="screen-title">MERLIN</h1>
-            <p class="lead" style="margin-top:-4px">A 6-world AI-safety run. ${hasSave ? "Pick up where you left off, or wipe the save and try again." : "First time? Hit Begin — we'll walk you through it."}</p>
-            ${bestRaw ? `<p style="color:var(--lime);font-weight:800;letter-spacing:.08em;margin:-6px 0 14px">Best run so far: ${formatTime(Number(bestRaw))}</p>` : ""}
+            ${bestRaw ? `<p style="color:var(--lime);font-weight:800;letter-spacing:.08em;margin:6px 0 14px">Best run so far: ${formatTime(Number(bestRaw))}</p>` : ""}
             <div class="button-row">
               ${primaryButton}
             </div>
@@ -1014,6 +1013,8 @@
         if (this.cleanup) this.cleanup();
         this.cleanup = null;
         if (opts.thenStart) {
+          // Mark walkthrough as seen now that onboarding is fully complete.
+          safeStorageSet(TUTORIAL_KEY, "1");
           this._beginRun(!!opts.fresh);
         } else {
           showToast("Avatar saved.");
@@ -1027,12 +1028,8 @@
       document.getElementById("avatarBack").addEventListener("click", () => {
         if (this.cleanup) this.cleanup();
         this.cleanup = null;
-        if (opts.thenStart) {
-          // Bounce back to tutorial step 1 so the player can re-read instructions
-          this.showTutorial({ onDone: () => this.showAvatarCustomizer({ thenStart: true, fresh: opts.fresh }) });
-        } else {
-          this.showStartScreen();
-        }
+        // Always escape back to title — players re-enter the run from there.
+        this.showStartScreen();
       });
     }
 
@@ -1091,9 +1088,8 @@
             ${slides.map((_, idx) => `<span class="dot ${idx === i ? "active" : ""} ${idx < i ? "done" : ""}"></span>`).join("")}
           </div>
           <div class="button-row">
-            <button class="primary" id="tutNext">${isLast ? "✓ Got it — next" : "▶ Next"}</button>
-            ${!isFirst ? `<button class="secondary" id="tutBack">← Back</button>` : ""}
-            <button class="secondary" id="tutSkip">Skip walkthrough</button>
+            <button class="primary" id="tutNext">${isLast ? "✓ Got it — design my avatar" : "▶ Next instruction"}</button>
+            ${!isFirst ? `<button class="secondary" id="tutBack">← Previous</button>` : ""}
           </div>
         `);
         const c = document.getElementById("tutCanvas").getContext("2d");
@@ -1110,7 +1106,6 @@
         });
         const back = document.getElementById("tutBack");
         if (back) back.addEventListener("click", () => { i -= 1; renderSlide(); });
-        document.getElementById("tutSkip").addEventListener("click", () => finish());
       };
 
       const finish = () => {
@@ -1184,9 +1179,11 @@
         return;
       }
       // First-time or fresh run → tutorial → avatar → world 1.
+      // Tutorial flag is only marked seen after the player completes the
+      // avatar step too, so bailing mid-flow re-shows the walkthrough.
       const goAvatar = () => this.showAvatarCustomizer({ thenStart: true, fresh });
       if (!tutorialSeen) {
-        this.showTutorial({ onDone: () => { safeStorageSet(TUTORIAL_KEY, "1"); goAvatar(); } });
+        this.showTutorial({ onDone: goAvatar });
       } else {
         goAvatar();
       }
