@@ -823,12 +823,14 @@
         <div class="screen-grid">
           <div>
             <p class="screen-kicker">// 30-MIN BROWSER RUN</p>
-            <h1 class="screen-title">NEUROBLOX</h1>
-            <p class="lead">A dark, blocky side-scroller about surviving the AI internet — prompts that work, fakes that don't fool you, your privacy intact, your head on straight.</p>
+            <h1 class="screen-title">DOOMLOOP</h1>
             <ul class="feature-list">
-              <li>6 worlds, each packed with mid-run challenges: voice-clone audio, deepfake spotting, prompt rebuilds, swipe sorts, scroll-stop reflex.</li>
-              <li>Scored on time. Bonuses for clears. Penalties for damage and hint use.</li>
-              <li>Keyboard: arrows / WASD, Space = jump, E / Enter = interact. Touch controls on mobile.</li>
+              <li>Run right. Walk into glowing ▲ nodes to trigger challenges.</li>
+              <li>Press E (or tap !) at the boss tower in each world.</li>
+              <li>Portal opens once every node + the boss is cleared.</li>
+              <li><strong>Keyboard:</strong> arrows / WASD · Space = jump · E or Enter = interact · Esc = pause.</li>
+              <li><strong>Mobile:</strong> use the on-screen dpad, jump (↑), and interact (!).</li>
+              <li>Scored on time. Bonus for first-try clears. Penalty for wrong attempts and hints.</li>
               ${bestLine}
             </ul>
             <div class="button-row">
@@ -836,6 +838,7 @@
               <button class="secondary" id="startFresh">Reset Save</button>
               <button class="secondary" id="hostVerify">Host: verify code</button>
             </div>
+            <p style="margin-top:18px;color:var(--muted);font-size:0.78rem;letter-spacing:.14em;text-transform:uppercase">© Aaron Ang</p>
           </div>
           <div class="mission-map" aria-hidden="true">
             <div class="map-avatar"></div>
@@ -1289,26 +1292,32 @@
       setOverlay(`
         <p class="screen-kicker">// RUN COMPLETE</p>
         <h2 class="screen-title">${rank}</h2>
-        <p class="lead">All 6 worlds cleared. Show the code below to your host to log this score.</p>
 
-        <div class="result-card">
-          <div class="stat-tile"><span>Time</span><strong>${formatTime(this.finishMs)}</strong></div>
-          <div class="stat-tile"><span>Score</span><strong>${finalScore}</strong></div>
-          <div class="stat-tile"><span>First-try</span><strong>${this.firstTryClears}/${totalCleared} (${accuracyPct}%)</strong></div>
-          <div class="stat-tile"><span>Best time</span><strong>${isBest ? "NEW BEST" : formatTime(best)}</strong></div>
+        <div class="hero-score">
+          <div class="hero-score-main">
+            <span class="hero-label">FINAL SCORE</span>
+            <strong class="hero-score-num">${finalScore.toLocaleString()}</strong>
+          </div>
+          <div class="hero-score-side">
+            <div><span class="hero-label">TIME</span><strong>${formatTime(this.finishMs)}</strong></div>
+            <div><span class="hero-label">ACCURACY</span><strong>${accuracyPct}%</strong></div>
+            <div><span class="hero-label">${isBest ? "RESULT" : "BEST"}</span><strong style="${isBest ? "color:var(--lime)" : ""}">${isBest ? "NEW BEST" : formatTime(best)}</strong></div>
+          </div>
         </div>
 
-        <div class="result-card" style="margin-top:10px">
+        <p class="lead" style="margin-top:14px">Show this screen — and the proof code below — to your host to log this run.</p>
+
+        <div class="result-card" style="margin-top:6px">
+          <div class="stat-tile"><span>First-try clears</span><strong>${this.firstTryClears}/${totalCleared}</strong></div>
           <div class="stat-tile"><span>Challenge nodes</span><strong>${this.clearedNodes}/${this.totalNodes}</strong></div>
           <div class="stat-tile"><span>Boss worlds</span><strong>${this.bossesCleared}/${LEVEL_SPECS.length}</strong></div>
           <div class="stat-tile"><span>Wrong attempts</span><strong>${this.totalWrongAttempts}</strong></div>
-          <div class="stat-tile"><span>Hints used</span><strong>${this.hints}</strong></div>
         </div>
 
         <div class="verify-box" id="verifyBox" style="margin-top:18px">
-          <div class="verify-label">// PROOF-OF-RUN — show host</div>
+          <div class="verify-label">// PROOF-OF-RUN — show host with score above</div>
           <div class="verify-code" id="verifyCode">${code}</div>
-          <div class="verify-meta">Time ${formatTime(this.finishMs)} · ${this.firstTryClears}/${totalCleared} first-try · ${this.totalWrongAttempts} wrong</div>
+          <div class="verify-meta">Time ${formatTime(this.finishMs)} · ${this.firstTryClears}/${totalCleared} first-try · ${this.totalWrongAttempts} wrong · score ${finalScore.toLocaleString()}</div>
           <div class="button-row" style="margin-top:10px">
             <button class="secondary" id="copyCode">Copy code</button>
             <button class="secondary" id="copyReceipt">Copy full receipt</button>
@@ -1330,7 +1339,7 @@
       `);
 
       const receipt = [
-        "NEUROBLOX — proof of run",
+        "DOOMLOOP — proof of run",
         `Time:       ${formatTime(this.finishMs)} (${seconds}s)`,
         `Score:      ${finalScore}`,
         `Rank:       ${rank}`,
@@ -2881,7 +2890,7 @@
     ctx.shadowBlur = 16;
     ctx.font = "900 64px ui-monospace, monospace";
     ctx.textAlign = "center";
-    ctx.fillText("NEUROBLOX", LOGICAL_W / 2, LOGICAL_H / 2);
+    ctx.fillText("DOOMLOOP", LOGICAL_W / 2, LOGICAL_H / 2);
     ctx.shadowBlur = 0;
     ctx.textAlign = "left";
   }
