@@ -116,6 +116,13 @@ button { cursor: pointer; }
   width: 48px;
   font-weight: 900;
   color: var(--cyan);
+  font-size: 1.15rem;
+}
+
+.hud-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 #canvasShell {
@@ -1232,7 +1239,8 @@ code {
   }
   .hud-pill { min-width: 0; padding: 5px 8px; }
   .hud-pill.wide { grid-column: 1 / -1; grid-row: 2; min-height: 36px; }
-  .icon-button { grid-column: 4; grid-row: 1; }
+  .hud-actions { grid-column: 4; grid-row: 1; }
+  .icon-button { width: 42px; font-size: 1rem; }
   #gameCanvas { width: 100%; max-height: calc(100vh - 190px); }
   #mobileControls { display: grid; }
   .screen-grid, .video-lab, .breath-stage { grid-template-columns: 1fr; }
