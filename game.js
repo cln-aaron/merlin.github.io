@@ -840,6 +840,34 @@
       this.bindTouchButton("touchJump", "jump");
       this.bindTouchButton("touchAction", "action");
       pauseButton.addEventListener("click", () => this.togglePause());
+      const homeButton = document.getElementById("homeButton");
+      if (homeButton) homeButton.addEventListener("click", () => this.requestQuitToTitle());
+    }
+
+    requestQuitToTitle() {
+      if (!this.started || this.finished) {
+        this.showStartScreen();
+        return;
+      }
+      // Pause and ask before tossing the run
+      const wasPaused = this.paused;
+      this.paused = true;
+      setOverlay(`
+        <p class="screen-kicker">// QUIT TO TITLE?</p>
+        <h2 class="level-title">Bail out of this run?</h2>
+        <p class="lead">Your time and current world progress will be lost. Cleared worlds stay saved, so you can pick up from World ${this.levelIndex + 1} later.</p>
+        <div class="button-row">
+          <button class="danger" id="confirmQuit">✕ Yes, quit to title</button>
+          <button class="primary" id="cancelQuit">▶ No, keep playing</button>
+        </div>
+      `);
+      document.getElementById("confirmQuit").addEventListener("click", () => {
+        this.showStartScreen();
+      });
+      document.getElementById("cancelQuit").addEventListener("click", () => {
+        clearOverlay();
+        this.paused = wasPaused;
+      });
     }
 
     bindTouchButton(id, key) {
