@@ -600,6 +600,39 @@
   const AVATAR_KEY = "doomloopAvatar";
   const TUTORIAL_KEY = "merlinTutorialSeen";
 
+  // ============================================================
+  // ACCESS GATE
+  // - 12-digit numeric code, hashed with PBKDF2-SHA256 (200k iterations).
+  //   Only the base64 hash + salt are present in source — the plaintext
+  //   code never appears here.
+  // - Valid until 11 May 2026 18:00 Singapore time (UTC+8 → 10:00 UTC).
+  // ============================================================
+  const ACCESS_KEY = "merlinAccess";
+  const ACCESS_EXPIRY_MS = Date.UTC(2026, 4, 11, 10, 0, 0);
+  const ACCESS_SALT = "merlin-2026-sg-event-v1";
+  const ACCESS_ITER = 200000;
+  const ACCESS_HASH = "vJFWpKdxzA7V24Aj1oNXNy7mmKAEdPYuH7I7ohdb8cY=";
+
+  async function computeAccessHash(code) {
+    const enc = new TextEncoder();
+    const km = await crypto.subtle.importKey("raw", enc.encode(code), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt: enc.encode(ACCESS_SALT), iterations: ACCESS_ITER, hash: "SHA-256" },
+      km, 256
+    );
+    let s = "";
+    const arr = new Uint8Array(bits);
+    for (let i = 0; i < arr.length; i += 1) s += String.fromCharCode(arr[i]);
+    return btoa(s);
+  }
+
+  function timingSafeEqual(a, b) {
+    if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  }
+
   // Cute, wholesome customisation. Visor color comes from the current level's accent.
   const AVATAR_OPTIONS = {
     body: [
@@ -773,8 +806,90 @@
       this.avatar = loadAvatar();
       this.loadProgress();
       this.bindControls();
-      if (!this.maybeShowVerifyScreen()) this.showStartScreen();
+      this.bootGate();
       requestAnimationFrame((ts) => this.loop(ts));
+    }
+
+    bootGate() {
+      // Access window expires at 11 May 2026 18:00 SGT (UTC+8 → 10:00 UTC)
+      if (Date.now() >= ACCESS_EXPIRY_MS) {
+        this.showAccessClosed();
+        return;
+      }
+      if (safeStorageGet(ACCESS_KEY) === "1") {
+        if (!this.maybeShowVerifyScreen()) this.showStartScreen();
+        return;
+      }
+      this.showAccessGate();
+    }
+
+    showAccessClosed() {
+      this.paused = true;
+      this.started = false;
+      setOverlay(`
+        <p class="screen-kicker">// ACCESS WINDOW CLOSED</p>
+        <h2 class="screen-title">Run is over</h2>
+        <p class="lead">The access window for MERLIN closed at <strong>11 May 2026, 18:00 Singapore time</strong>. Talk to your host if you need to play again.</p>
+      `);
+    }
+
+    showAccessGate() {
+      this.paused = true;
+      this.started = false;
+      setOverlay(`
+        <p class="screen-kicker">// ACCESS CODE REQUIRED</p>
+        <h1 class="screen-title">MERLIN</h1>
+        <p class="lead">Enter your <strong>12-digit access code</strong> from your host to begin. Codes are valid until <strong>11 May 2026, 18:00 Singapore time</strong>.</p>
+        <div class="gate-input">
+          <input id="accessInput" type="tel" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="12" placeholder="• • • • • • • • • • • •" aria-label="12-digit access code" />
+        </div>
+        <p class="puzzle-note" id="accessFeedback">Numbers only. Hit Enter or tap Unlock.</p>
+        <div class="button-row">
+          <button class="primary" id="accessSubmit">▶ Unlock the run</button>
+        </div>
+      `);
+      const input = document.getElementById("accessInput");
+      const feedback = document.getElementById("accessFeedback");
+      const submitBtn = document.getElementById("accessSubmit");
+      input.focus();
+      input.addEventListener("input", () => {
+        input.value = input.value.replace(/\D/g, "").slice(0, 12);
+      });
+      const tryUnlock = async () => {
+        const code = input.value.trim();
+        if (!/^\d{12}$/.test(code)) {
+          feedback.innerHTML = `<strong style="color:var(--coral)">12 digits required.</strong>`;
+          input.focus();
+          return;
+        }
+        if (Date.now() >= ACCESS_EXPIRY_MS) {
+          this.showAccessClosed();
+          return;
+        }
+        submitBtn.disabled = true;
+        feedback.textContent = "Checking…";
+        try {
+          const computed = await computeAccessHash(code);
+          if (timingSafeEqual(computed, ACCESS_HASH)) {
+            safeStorageSet(ACCESS_KEY, "1");
+            feedback.innerHTML = `<strong style="color:var(--lime)">Unlocked.</strong>`;
+            setTimeout(() => {
+              if (!this.maybeShowVerifyScreen()) this.showStartScreen();
+            }, 350);
+          } else {
+            feedback.innerHTML = `<strong style="color:var(--coral)">Code not recognised.</strong> Check the digits with your host and try again.`;
+            submitBtn.disabled = false;
+            input.select();
+          }
+        } catch (err) {
+          feedback.innerHTML = `<strong style="color:var(--coral)">Verification error.</strong> Refresh and try again.`;
+          submitBtn.disabled = false;
+        }
+      };
+      submitBtn.addEventListener("click", tryUnlock);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); tryUnlock(); }
+      });
     }
 
     maybeShowVerifyScreen() {
