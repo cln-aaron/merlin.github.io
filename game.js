@@ -605,10 +605,10 @@
   // - 12-digit numeric code, hashed with PBKDF2-SHA256 (200k iterations).
   //   Only the base64 hash + salt are present in source — the plaintext
   //   code never appears here.
-  // - Valid until 2 June 2026 23:59 Singapore time (UTC+8 → 15:59 UTC).
+  // - Valid until 2 July 2026 23:59 Singapore time (UTC+8 → 15:59 UTC).
   // ============================================================
   const ACCESS_KEY = "merlinAccess";
-  const ACCESS_EXPIRY_MS = Date.UTC(2026, 5, 2, 15, 59, 59);
+  const ACCESS_EXPIRY_MS = Date.UTC(2026, 6, 2, 15, 59, 59);
   const ACCESS_SALT = "merlin-2026-sg-event-v1";
   const ACCESS_ITER = 200000;
   const ACCESS_HASH = "vJFWpKdxzA7V24Aj1oNXNy7mmKAEdPYuH7I7ohdb8cY=";
@@ -811,7 +811,7 @@
     }
 
     bootGate() {
-      // Access window expires at 2 June 2026 23:59 SGT (UTC+8 → 15:59 UTC)
+      // Access window expires at 2 July 2026 23:59 SGT (UTC+8 → 15:59 UTC)
       if (Date.now() >= ACCESS_EXPIRY_MS) {
         this.showAccessClosed();
         return;
@@ -829,7 +829,7 @@
       setOverlay(`
         <p class="screen-kicker">// ACCESS WINDOW CLOSED</p>
         <h2 class="screen-title">Run is over</h2>
-        <p class="lead">The access window for MERLIN closed at <strong>2 June 2026, 23:59 Singapore time</strong>. Talk to your host if you need to play again.</p>
+        <p class="lead">The access window for MERLIN closed at <strong>2 July 2026, 23:59 Singapore time</strong>. Talk to your host if you need to play again.</p>
       `);
     }
 
@@ -839,7 +839,7 @@
       setOverlay(`
         <p class="screen-kicker">// ACCESS CODE REQUIRED</p>
         <h1 class="screen-title">MERLIN</h1>
-        <p class="lead">Enter your <strong>12-digit access code</strong> from your host to begin. Codes are valid until <strong>2 June 2026, 23:59 Singapore time</strong>.</p>
+        <p class="lead">Enter your <strong>12-digit access code</strong> from your host to begin. Codes are valid until <strong>2 July 2026, 23:59 Singapore time</strong>.</p>
         <div class="gate-input">
           <input id="accessInput" type="tel" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="12" placeholder="• • • • • • • • • • • •" aria-label="12-digit access code" />
         </div>
