@@ -607,6 +607,9 @@
   //   code never appears here.
   // - Valid until 2 July 2026 23:59 Singapore time (UTC+8 → 15:59 UTC).
   // ============================================================
+  // Formspree endpoint for the end-game competition entry form.
+  const FORMSPREE_ENDPOINT = "https://formspree.io/f/xqevdadp";
+
   const ACCESS_KEY = "merlinAccess";
   const ACCESS_EXPIRY_MS = Date.UTC(2026, 6, 2, 15, 59, 59);
   const ACCESS_SALT = "merlin-2026-sg-event-v1";
@@ -1761,6 +1764,55 @@
           </div>
         </div>
 
+        <div class="competition-card" id="competitionCard">
+          <p class="screen-kicker" style="background:rgba(255, 201, 74, 0.12);color:var(--amber);border-color:rgba(255,201,74,.5)">// 🏆 ENTER THE COMPETITION</p>
+          <h3 class="competition-title">Want a shot at winning?</h3>
+          <p class="competition-lead">Drop your details and we'll log your score. We may DM you on the channel of your choice — and tag you on Insta if you win.</p>
+          <form id="entryForm" class="entry-form" novalidate>
+            <label class="entry-field">
+              <span>Name *</span>
+              <input name="name" type="text" autocomplete="name" required maxlength="80" placeholder="Your full name" />
+            </label>
+            <label class="entry-field">
+              <span>Email *</span>
+              <input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com" />
+            </label>
+            <label class="entry-field">
+              <span>School *</span>
+              <input name="school" type="text" required maxlength="120" placeholder="e.g. Riverside Secondary" />
+            </label>
+            <label class="entry-field">
+              <span>WhatsApp</span>
+              <input name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" maxlength="40" placeholder="+65 9123 4567" />
+            </label>
+            <label class="entry-field">
+              <span>Telegram</span>
+              <input name="telegram" type="text" maxlength="40" placeholder="@yourhandle" />
+            </label>
+            <label class="entry-field">
+              <span>Instagram <small>(for tagging!)</small></span>
+              <input name="instagram" type="text" maxlength="40" placeholder="@yourhandle" />
+            </label>
+            <input type="hidden" name="score" value="${finalScore}" />
+            <input type="hidden" name="time" value="${formatTime(this.finishMs)}" />
+            <input type="hidden" name="time_seconds" value="${seconds}" />
+            <input type="hidden" name="rank" value="${escapeHtml(rank)}" />
+            <input type="hidden" name="accuracy_pct" value="${accuracyPct}" />
+            <input type="hidden" name="first_try" value="${this.firstTryClears}" />
+            <input type="hidden" name="total_cleared" value="${totalCleared}" />
+            <input type="hidden" name="total_challenges" value="${totalChallenges}" />
+            <input type="hidden" name="wrong_attempts" value="${this.totalWrongAttempts}" />
+            <input type="hidden" name="hints_used" value="${this.hints}" />
+            <input type="hidden" name="proof_code" value="${code}" />
+            <input type="hidden" name="_subject" value="MERLIN — competition entry (${finalScore} pts, ${rank})" />
+            <input type="text" name="_gotcha" tabindex="-1" autocomplete="off" style="position:absolute;left:-10000px;width:1px;height:1px;opacity:0" />
+            <p class="puzzle-note" id="entryFeedback" style="margin:6px 0">Fields marked * are required. Your score is attached automatically.</p>
+            <div class="button-row" style="margin-top:6px">
+              <button type="submit" class="primary" id="entrySubmit">📨 Submit my entry</button>
+            </div>
+          </form>
+        </div>
+
         <ul class="feature-list" style="margin-top:18px">
           <li>Prompt with goal, context, limits, format, verify.</li>
           <li>Confidence is not proof. Check the source.</li>
@@ -1774,6 +1826,56 @@
           <button class="secondary" id="titleAgain">← Back to title</button>
         </div>
       `);
+
+      // Entry form: POST to Formspree as JSON, replace card with success state.
+      const entryForm = document.getElementById("entryForm");
+      const entryFeedback = document.getElementById("entryFeedback");
+      const entrySubmit = document.getElementById("entrySubmit");
+      entryForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (entrySubmit.disabled) return;
+        const data = Object.fromEntries(new FormData(entryForm).entries());
+        const trim = (v) => typeof v === "string" ? v.trim() : v;
+        const name = trim(data.name);
+        const email = trim(data.email);
+        const school = trim(data.school);
+        if (!name || !email || !school) {
+          entryFeedback.innerHTML = `<strong style="color:var(--coral)">Name, email, and school are required.</strong>`;
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          entryFeedback.innerHTML = `<strong style="color:var(--coral)">That email doesn't look right.</strong>`;
+          return;
+        }
+        if (data._gotcha) return; // honeypot — silently drop bots
+        entrySubmit.disabled = true;
+        entryFeedback.textContent = "Submitting…";
+        try {
+          const res = await fetch(FORMSPREE_ENDPOINT, {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+          });
+          if (res.ok) {
+            document.getElementById("competitionCard").innerHTML = `
+              <p class="screen-kicker" style="background:rgba(182, 255, 92, 0.12);color:var(--lime);border-color:rgba(182,255,92,.5)">// ENTRY SUBMITTED</p>
+              <h3 class="competition-title">You're in. Good luck.</h3>
+              <p class="competition-lead">We've logged your score (${finalScore.toLocaleString()} pts, ${rank}). If you win we'll reach out on the channels you gave us.</p>
+            `;
+          } else {
+            let detail = "";
+            try {
+              const body = await res.json();
+              if (body?.errors?.length) detail = body.errors.map((x) => x.message).join("; ");
+            } catch (_) {}
+            entryFeedback.innerHTML = `<strong style="color:var(--coral)">Submit failed (${res.status}).</strong> ${escapeHtml(detail) || "Try again, or screenshot this screen and send to your host."}`;
+            entrySubmit.disabled = false;
+          }
+        } catch (err) {
+          entryFeedback.innerHTML = `<strong style="color:var(--coral)">Network error.</strong> ${escapeHtml(err.message || "")} Try again, or screenshot this screen.`;
+          entrySubmit.disabled = false;
+        }
+      });
 
       const receipt = [
         "MERLIN — proof of run",
